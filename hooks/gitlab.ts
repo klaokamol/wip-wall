@@ -1,0 +1,188 @@
+import type { Hook } from 'claude-code'
+
+import type { Mention, Setup, SetupCheck } from '../types'
+import { MENTION_ACTIONS, boardOrder, clean, fromNdjson, mentionsOf, mrOfGraphql } from './board'
+import type { GqlMr, Raw, RawBoard, RawTodo } from './board'
+
+export type Dollar = Parameters<Hook<'session.start'>>[0]
+
+const BOARD_TTL_MS = 24 * 60 * 60 * 1000
+
+// ponytail: first existing folder of a fixed list is the clone root; several roots would need WIP_WALL_ROOT as a path list
+const ROOTS = ['Developer/Project-Work', 'Developer', 'Projects', 'src', 'code']
+const ROOT_KEY = 'ui:root'
+const HAS_CONTROL = /[\u0000-\u001f\u007f]/
+const FALLBACK_ROOT = `$(for d in ${ROOTS.map(r => `"$HOME/${r}"`).join(' ')}; do [ -d "$d" ] && { echo "$d"; break; }; done)`
+const LIST_ROOTS = `for r in ${ROOTS.join(' ')}; do [ -d "$HOME/$r" ] && echo "$HOME/$r"; done`
+const RESOLVE = 'case "$1" in "~") d=$HOME;; "~/"*) d=$HOME/${1#"~/"};; *) d=$1;; esac; [ -d "$d" ] && printf %s "$d"'
+const PROBE = 'if application "Ghostty" is running then\ntell application "Ghostty" to get name\nreturn "ok"\nend if\nreturn "idle"'
+
+const DETECT = [
+  'export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"',
+  'glab="${WIP_WALL_GLAB:-$(command -v glab)}"',
+  `printf '%s\\n' "$glab" "\${WIP_WALL_HOST:-\${GITLAB_HOST:-$("$glab" config get host 2>/dev/null)}}" "\${WIP_WALL_ROOT:-\${WIP_WALL_SAVED_ROOT:-${FALLBACK_ROOT}}}" "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"`,
+].join('\n')
+
+export const messageOf = (cause: unknown): string => clean(String(cause instanceof Error ? cause.message : cause))
+
+type Settings = { glab: string; host: string; root: string; sessions: string }
+
+let detected: Promise<Settings> | undefined
+
+async function savedRoot($: Dollar): Promise<string> {
+  const saved = await $.store.get(ROOT_KEY)
+
+  return typeof saved === 'string' && saved.startsWith('/') && !HAS_CONTROL.test(saved) ? saved : ''
+}
+
+async function detect($: Dollar): Promise<Settings> {
+  const ran = await $.process.run(['sh', '-c', DETECT], { env: { WIP_WALL_SAVED_ROOT: await savedRoot($) } })
+  const [glab = '', host = '', root = '', sessions = ''] = ran.stdout.split('\n')
+
+  return { glab, host, root, sessions }
+}
+
+export function forgetSettings() {
+  detected = undefined
+}
+
+export function settingsOf($: Dollar): Promise<Settings> {
+  const found = (detected ??= detect($).then(settings => {
+    if (!settings.glab) throw new Error('glab not found: install it or set WIP_WALL_GLAB')
+    if (!settings.host) throw new Error('GitLab host unknown: run glab auth login or set WIP_WALL_HOST')
+    if (!settings.root || !settings.sessions) throw new Error('clone root or sessions folder unknown: run /wip-wall setup or set WIP_WALL_ROOT')
+
+    return settings
+  }))
+  found.catch(() => {
+    detected = undefined
+  })
+
+  return found
+}
+
+export async function saveRoot($: Dollar, folder: string): Promise<string> {
+  const typed = folder.trim()
+  if (HAS_CONTROL.test(typed)) return 'the folder holds a control character'
+  if (typed !== '~' && !typed.startsWith('~/') && !typed.startsWith('/')) return 'give an absolute folder, or one that starts with ~/'
+  const path = (await $.process.run(['sh', '-c', RESOLVE, 'sh', typed])).stdout.trim().replace(/\/+$/, '')
+  if (HAS_CONTROL.test(path)) return 'the folder holds a control character'
+  if (path === '') return `${typed} is not a folder, or is the filesystem root`
+  await $.store.set(ROOT_KEY, path)
+  forgetSettings()
+
+  return ''
+}
+
+export async function setupOf($: Dollar): Promise<Setup> {
+  const raw = await detect($)
+  const saved = await savedRoot($)
+  const hasGlab = raw.glab !== ''
+  const loggedIn = hasGlab && raw.host !== '' && (await $.process.run([raw.glab, 'auth', 'status', '--hostname', raw.host])).exitCode === 0
+  const installed = (await $.process.run(['osascript', '-e', 'id of application "Ghostty"'])).exitCode === 0
+  const probe = installed ? await $.process.run(['osascript', '-e', PROBE]) : undefined
+  const rootExists = raw.root !== '' && (await $.process.run(['test', '-d', raw.root])).exitCode === 0
+  const roots = (await $.process.run(['sh', '-c', LIST_ROOTS])).stdout.split('\n').filter(line => line !== '')
+  const loginNote = raw.host === '' ? 'no host: run glab auth login, or set WIP_WALL_HOST' : `run glab auth login --hostname ${raw.host}`
+  const checks: SetupCheck[] = [
+    { label: 'glab', ok: hasGlab, note: hasGlab ? raw.glab : 'brew install glab, or set WIP_WALL_GLAB' },
+    { label: 'GitLab login', ok: loggedIn, note: loggedIn ? raw.host : hasGlab ? loginNote : 'needs glab first' },
+    { label: 'Ghostty', ok: installed, note: installed ? 'installed' : 'install it from ghostty.org' },
+    {
+      label: 'Ghostty control',
+      ok: probe !== undefined && probe.exitCode === 0,
+      note: probe === undefined ? 'needs Ghostty first' : probe.exitCode !== 0 ? 'allow it in System Settings, Privacy and Security, Automation' : probe.stdout.trim() === 'idle' ? 'Ghostty is not running: macOS asks on the first open' : 'allowed',
+    },
+    {
+      label: 'Clone folder',
+      ok: rootExists,
+      note: raw.root === '' ? 'none of the usual folders exists: pick one below or run /wip-wall setup <folder>' : saved !== '' && saved !== raw.root ? `${raw.root} (WIP_WALL_ROOT overrides the folder chosen here)` : raw.root,
+      clones: true,
+    },
+  ]
+
+  return { checks: checks.map(c => ({ ...c, note: clean(c.note) })), roots: roots.map(clean), root: clean(raw.root) }
+}
+
+async function run($: Dollar, argv: string[]): Promise<string> {
+  const { glab, host } = await settingsOf($)
+  const ran = await $.process.run([glab, 'api', ...argv], { env: { GITLAB_HOST: host } })
+  if (ran.exitCode !== 0) throw new Error(ran.stderr.trim() || `glab exit ${ran.exitCode}`)
+
+  return ran.stdout
+}
+
+async function listOf<T = Raw>($: Dollar, path: string): Promise<T[]> {
+  return fromNdjson<T>(await run($, ['--paginate', '--output', 'ndjson', path]))
+}
+
+const REVIEW_STATES = 'reviewStates: [UNREVIEWED, REVIEW_STARTED, UNAPPROVED], '
+
+const mrsQuery = (field: string, filter = '') => `query($after: String) { currentUser { id ${field}(state: opened, ${filter}first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { reference(full: true) author { username } title webUrl updatedAt sourceBranch draft conflicts approved detailedMergeStatus mergeableDiscussionsState labels { nodes { title } } headPipeline { status } reviewers { nodes { id } } notes(last: 10) { nodes { system author { id } } } } } } }`
+
+type MrConnection = { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: GqlMr[] }
+
+type MrPage = { data: { currentUser: ({ id: string } & Record<string, MrConnection | undefined>) | null } }
+
+async function mrsOf($: Dollar, field: string, filter = ''): Promise<Raw[]> {
+  const query = mrsQuery(field, filter)
+  const found: Raw[] = []
+  let after = ''
+  for (;;) {
+    const page = JSON.parse(await run($, ['graphql', '-f', `query=${query}`, ...(after === '' ? [] : ['-f', `after=${after}`])])) as MrPage
+    const user = page.data?.currentUser
+    const mrs = user?.[field]
+    if (!user || !mrs) throw new Error('GitLab returned no current user for the merge request query')
+    const id = user.id
+    found.push(...mrs.nodes.map(node => mrOfGraphql(node, id)))
+    if (!mrs.pageInfo.hasNextPage || !mrs.pageInfo.endCursor) return found
+    after = mrs.pageInfo.endCursor
+  }
+}
+
+async function pendingMentions($: Dollar): Promise<Mention[]> {
+  const pages = await Promise.all(
+    MENTION_ACTIONS.map(action => listOf<RawTodo>($, `todos?state=pending&action=${action}&per_page=100`)),
+  )
+
+  return mentionsOf(pages.flat())
+}
+
+type CachedBoard = { at: number; order: string[] }
+
+export async function boardOf($: Dollar, project: string): Promise<string[]> {
+  const key = `board:${project}`
+  const saved = (await $.store.get(key)) as CachedBoard | undefined
+  const kept = saved !== undefined && Array.isArray(saved.order) ? saved : undefined
+  if (kept && Date.now() - kept.at < BOARD_TTL_MS) return kept.order
+  try {
+    const order = boardOrder(JSON.parse(await run($, [`projects/${encodeURIComponent(project)}/boards`])) as RawBoard[])
+    await $.store.set(key, { at: Date.now(), order } satisfies CachedBoard)
+
+    return order
+  } catch {
+    return kept?.order ?? []
+  }
+}
+
+export type Fetched = { issues: Raw[]; mrs: Raw[]; reviews: Raw[]; mentions: Mention[]; failures: { mrs: string; reviews: string; mentions: string } }
+
+export async function fetchBoard($: Dollar): Promise<Fetched> {
+  const [issues, mrs, reviews, mentions] = await Promise.all([
+    listOf($, 'issues?scope=assigned_to_me&state=opened&per_page=100'),
+    mrsOf($, 'assignedMergeRequests').then(
+      found => ({ found, failure: '' }),
+      cause => ({ found: [] as Raw[], failure: `merge requests: ${messageOf(cause)}` }),
+    ),
+    mrsOf($, 'reviewRequestedMergeRequests', REVIEW_STATES).then(
+      found => ({ found, failure: '' }),
+      cause => ({ found: [] as Raw[], failure: `review requests: ${messageOf(cause)}` }),
+    ),
+    pendingMentions($).then(
+      found => ({ found, failure: '' }),
+      cause => ({ found: [] as Mention[], failure: `mentions: ${messageOf(cause)}` }),
+    ),
+  ])
+
+  return { issues, mrs: mrs.found, reviews: reviews.found, mentions: mentions.found, failures: { mrs: mrs.failure, reviews: reviews.failure, mentions: mentions.failure } }
+}

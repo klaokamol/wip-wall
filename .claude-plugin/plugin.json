@@ -1,0 +1,1 @@
+{ "name": "wip-wall", "version": "0.1.0", "author": { "name": "Klaokamol" }, "license": "MIT", "description": "Pane of GitLab issues and MRs assigned to me, as status-coloured cards that open a Claude session in a Ghostty window.", "types": "./types/index.d.ts" }

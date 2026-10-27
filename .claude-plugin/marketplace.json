@@ -1,0 +1,6 @@
+{
+  "name": "wip-wall-local",
+  "owner": { "name": "Klaokamol" },
+  "description": "WIP-WALL: a pane of your assigned GitLab issues and merge requests",
+  "plugins": [{ "name": "wip-wall", "source": "./" }]
+}
