@@ -258,7 +258,7 @@ test('the date chips narrow the cards by last update and all brings them back', 
   expect(await ui.find({ type: 'Text', text: /fresh one/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /open one/ })).toBeUndefined()
   expect(await ui.findAll({ type: 'Text', text: /\[all·1\]/ })).toHaveLength(2)
-  expect(await ui.findAll({ type: 'Text', text: /^\+1 more$/ })).toHaveLength(2)
+  expect(await ui.findAll({ type: 'Text', text: /^\+1 more$/ })).toHaveLength(3)
   expect(await ui.findAll({ type: 'Text', text: /^\+4 more$/ })).toHaveLength(1)
 
   await $.ui.press({ plugin: 'wip-wall', key: 'date:menu' })
@@ -440,8 +440,13 @@ test('the session showing the pane gives the pane back when it ends, but not on 
 test('the Sort filter row switches between status and latest and is remembered', async ($, on) => {
   const ui = await boot($, on)
   expect(await ui.find({ type: 'Text', text: /^Sort +:$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '[latest]' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '[default]' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '+1 more' })).toBeDefined()
+  expect(await ui.find({ key: 'sort:latest' })).toBeUndefined()
+  await $.ui.press({ plugin: 'wip-wall', key: 'sort:menu' })
+  expect(await ui.find({ type: 'Text', text: '+1 more' })).toBeUndefined()
   await $.ui.press({ plugin: 'wip-wall', key: 'sort:latest' })
+  await $.ui.press({ plugin: 'wip-wall', key: 'sort:menu' })
   await $.ui.press({ plugin: 'wip-wall', key: 'sort:status' })
   expect(storedValues.filter(e => e.key === 'ui:latest').map(e => e.value)).toEqual([true, false])
   expect(await ui.find({ type: 'Text', text: '[s]' })).toBeUndefined()

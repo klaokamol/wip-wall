@@ -37,6 +37,7 @@ const groupMenu = atom({ plugin: 'wip-wall', key: 'groupMenu' } as const, false)
 const repoMenu = atom({ plugin: 'wip-wall', key: 'repoMenu' } as const, false)
 const statusMenu = atom({ plugin: 'wip-wall', key: 'statusMenu' } as const, false)
 const dateMenu = atom({ plugin: 'wip-wall', key: 'dateMenu' } as const, false)
+const sortMenu = atom({ plugin: 'wip-wall', key: 'sortMenu' } as const, false)
 const boards = atom({ plugin: 'wip-wall', key: 'boards' } as const, {})
 const datePick = atom({ plugin: 'wip-wall', key: 'date' } as const, 'month')
 const statusPick = atom({ plugin: 'wip-wall', key: 'status' } as const, 'all')
@@ -633,6 +634,7 @@ export const register: Register = on => {
       .sort((a, b) => b.length - a.length)[0]
     const statusOpen = await read($, statusMenu)
     const dateOpen = await read($, dateMenu)
+    const sortOpen = await read($, sortMenu)
     const setupNow = await read($, setup)
     const view = paneOf(
       {
@@ -816,10 +818,10 @@ export const register: Register = on => {
           look,
           'Sort',
           'sort',
-          true,
-          () => undefined,
+          sortOpen,
+          v => update($, sortMenu, () => v),
           [
-            { id: 'status', label: 'status', color: MUTED, on: !latestOn, press: () => pickLatest($, false) },
+            { id: 'status', label: 'default', color: MUTED, on: !latestOn, press: () => pickLatest($, false) },
             { id: 'latest', label: 'latest', color: MUTED, on: latestOn, press: () => pickLatest($, true) },
           ],
           true,

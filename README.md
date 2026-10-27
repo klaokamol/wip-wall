@@ -36,7 +36,7 @@ Every card is an issue coloured by its `Status::` label, with its merge request,
 | **Requests** | Merge requests waiting for your review: unreviewed, review started or unapproved. |
 | **MR state** | Pipeline, approvals, conflicts, open threads, stale and blocked, as one coloured line per merge request. |
 | **Branches** | `↓` marks an issue that already has a local branch named after it. |
-| **Filters** | Project, repo, status, last update, and a `Sort` row: board status or latest first. |
+| **Filters** | Project, repo, status, last update, and a `Sort` row: `default` order (by status) or `latest` first. |
 | **Dismiss** | `✕` hides a card until it next changes. |
 | **Themes** | Six themes on `[t]`, each checked for readable contrast. |
 

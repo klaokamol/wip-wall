@@ -55,6 +55,7 @@ declare module 'claude-code' {
       repoMenu: boolean
       statusMenu: boolean
       dateMenu: boolean
+      sortMenu: boolean
       boards: Record<string, string[]>
       status: string
       date: string
