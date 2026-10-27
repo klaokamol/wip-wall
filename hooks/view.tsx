@@ -9,7 +9,7 @@ type Els = ReturnType<Dollar['ui']['resolve']>
 
 export const MARQUEE_STEP_MS = 250
 
-const PLACES: Place[] = ['window', 'tab', 'split', 'here']
+const PLACES: Place[] = ['here', 'split', 'tab', 'window']
 
 export type Act = {
   open: (card: Card) => unknown
@@ -136,19 +136,17 @@ export function picker(look: Look, label: string, id: string, isOpen: boolean, s
 function chooser(look: Look, card: Card) {
   const { Box, Text, Button } = look.els
   const { muted: MUTED, faint: FAINT, text: TEXT } = look.theme
-  const places = [look.lastPlace, ...PLACES.filter(p => p !== look.lastPlace)]
-
   return (
     <Box key={`choose:${card.key}`} columnGap={1}>
       <Text color={MUTED}>open:</Text>
-      {places.map(place =>
+      {PLACES.map(place =>
         place === 'here' && !look.canHere(card) ? (
           <Button key={`choose:${card.key}:${place}`} plain onPress={() => look.act.noHere(card)}>
             <Text color={FAINT}>{`[${place}]`}</Text>
           </Button>
         ) : (
           <Button key={`choose:${card.key}:${place}`} plain onPress={() => look.act.openAt(card, place)}>
-            <Text bold color={TEXT}>{`[${place}]`}</Text>
+            <Text bold={place === look.lastPlace} color={place === look.lastPlace ? TEXT : MUTED}>{`[${place}]`}</Text>
           </Button>
         ),
       )}
@@ -421,6 +419,7 @@ export function setupView(look: Look, setup: Setup, clones: number, act: { root:
           </Box>
         </Box>
       ))}
+      <Text color={theme.faint}>{'GitLab host: /wip-wall setup host <host>'}</Text>
       {setup.roots.length > 0 && <Text color={theme.faint}>{'clone folder: press one, or run /wip-wall setup <folder>'}</Text>}
       {setup.roots.map((path, n) => (
         <Button key={`setup:root:${n}`} plain onPress={() => act.root(path)}>

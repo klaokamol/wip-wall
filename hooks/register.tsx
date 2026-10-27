@@ -5,7 +5,7 @@ import type { Card, Mention, Setup } from '../types'
 import { MOCK, MOCK_HERE, MOCK_LIVE, MOCK_LOCAL, MOCK_MENTIONS, MOCK_RESUMABLE, MOCK_REVIEWS } from './mock'
 import { ageOf, dirOf, dirsOf, isWebUrl, paneOf, reviewsOf, staleHides, titleOf, toCards } from './board'
 import type { Orders } from './board'
-import { boardOf, fetchBoard, messageOf, saveRoot, settingsOf, setupOf } from './gitlab'
+import { boardOf, fetchBoard, messageOf, saveHost, saveRoot, settingsOf, setupOf } from './gitlab'
 import { cardStatus, claimCard, focusRunning, isCardWindow, openCardSession, pruneCardSessions, releaseBranchCard } from './sessions'
 import type { Place } from './sessions'
 import { THEMES } from './themes'
@@ -281,10 +281,10 @@ const open = async ($: Dollar, card: Card) => {
   opening.add(card.key)
   try {
     const { root } = await settingsOf($)
-    if (!dirOf(await read($, dirs), card)) return $.ui.toast(`No local clone of ${card.repo} under ${root}`)
-    if (!isWebUrl(card.url)) return $.ui.toast('Refusing to open a link that is not http or https')
     if (card.key === (await read($, here))) return $.ui.toast('This card is open in this session')
     if (await focusRunning($, card)) return
+    if (!dirOf(await read($, dirs), card)) return $.ui.toast(`No local clone of ${card.repo} under ${root}`)
+    if (!isWebUrl(card.url)) return $.ui.toast('Refusing to open a link that is not http or https')
     await update($, choosing, () => card.key)
   } finally {
     opening.delete(card.key)
@@ -556,7 +556,7 @@ export const register: Register = on => {
     const leaving = mocking
     const typed = e.args.trim()
     mocking = typed === 'mock'
-    const setting = typed === 'setup' || typed.startsWith('setup ')
+    const setting = /^setup(\s|$)/.test(typed)
     const run = (setupRun += 1)
     if (!setting) await update($, setup, () => NO_SETUP)
     if (leaving && !mocking) {
@@ -573,7 +573,10 @@ export const register: Register = on => {
     let saved = false
     if (setting) {
       const folder = typed.slice('setup'.length).trim()
-      if (folder !== '') {
+      if (/^host(\s|$)/.test(folder)) {
+        rejected = await saveHost($, folder.slice('host'.length))
+        saved = rejected === ''
+      } else if (folder !== '') {
         rejected = await saveRoot($, folder)
         saved = rejected === ''
       }
@@ -591,7 +594,7 @@ export const register: Register = on => {
     await syncLive($)
     poll($)
 
-    return { text: rejected !== '' ? `Folder not saved: ${rejected}` : setting ? 'WIP-WALL setup checked: see the pane' : 'WIP-WALL refreshed' }
+    return { text: rejected !== '' ? `Not saved: ${rejected}` : setting ? 'WIP-WALL setup checked: see the pane' : 'WIP-WALL refreshed' }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -824,8 +827,10 @@ export const register: Register = on => {
         {sections.length === 0 && heard.length === 0 && working.length === 0 && rule(look, 'Cards')}
         {problem !== '' && (
           <Box columnGap={1}>
-            <Box flexShrink={1}>
-              <Text color={BAD} wrap="truncate-end">{problem}</Text>
+            <Box flexShrink={1} flexDirection="column">
+              {problem.split(' · ').map((part, n) => (
+                <Text key={`problem:${n}`} color={BAD}>{part}</Text>
+              ))}
             </Box>
             <Button key="retry" plain onPress={() => refresh($)}>
               <Text bold color={TEXT}>[retry]</Text>

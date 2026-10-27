@@ -164,8 +164,20 @@ export async function isCardWindow($: Dollar): Promise<boolean> {
 
 export async function focusRunning($: Dollar, card: Card): Promise<boolean> {
   const known = (await $.store.get(`card:${card.key}`)) as Session | undefined
-  if (!known || !(await runningSids($).catch(() => new Set<string>())).has(known.sid)) return false
-  const picked = await $.process.run(['osascript', '-e', SELECT_TAB, known.tab])
+  if (!known) return false
+  const running = await runningSids($).catch(() => undefined)
+  if (!running) {
+    $.ui.toast('Cannot check which Claude sessions run: press the card again')
+
+    return true
+  }
+  if (!running.has(known.sid)) return false
+  const picked = await $.process.run(['osascript', '-e', SELECT_TAB, known.tab], { timeoutMs: 5000 }).catch(() => undefined)
+  if (!picked) {
+    $.ui.toast('Ghostty did not answer: allow it in System Settings, Privacy and Security, Automation')
+
+    return true
+  }
   if (picked.stdout.trim() !== 'ok') $.ui.toast("This card's Claude session runs in a terminal wip-wall did not open (a hand-started claude or a split): switch to it there")
 
   return true

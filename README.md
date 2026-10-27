@@ -83,7 +83,7 @@ open: [window] [tab] [split] [here] [×]
 | `split` | A split to the right of the focused terminal, in the front window's selected tab. |
 | `here` | Only when this session is already in that clone: the card's link goes into your prompt (or `/resume <id>` when the card has a saved session). |
 
-The last place you chose is drawn first. A new Claude starts with the card's link typed into the prompt and not submitted; you press Enter yourself.
+The places always read `here`, `split`, `tab`, `window`; the last one you chose is drawn bold. A new Claude starts with the card's link typed into the prompt and not submitted; you press Enter yourself.
 
 ### Markers
 
@@ -132,7 +132,7 @@ Folder names do not matter: a clone is found by its remote url, so a project who
 | Variable | Default |
 | --- | --- |
 | `WIP_WALL_GLAB` | `glab` on `PATH` (also looks in `/opt/homebrew/bin` and `/usr/local/bin`) |
-| `WIP_WALL_HOST` | `GITLAB_HOST`, then `glab config get host` |
+| `WIP_WALL_HOST` | the host chosen with `/wip-wall setup host <host>`, then `GITLAB_HOST`, then `glab config get host` |
 | `WIP_WALL_ROOT` | the folder chosen with `/wip-wall setup`, else the first existing folder listed above |
 
 `WIP_WALL_ROOT` wins over a chosen folder, which suits a shell profile.
@@ -154,7 +154,7 @@ WIP-WALL is a mod: it runs inside your Claude Code session with your own rights 
 
 **Claude sessions it starts.** Pressing a card runs `claude --session-id <id>` in the card's clone, with the card's url typed into the prompt (or `/resume <old id>` when the card already had a session). You press Enter yourself; nothing is submitted for you. The new session has your normal Claude Code permissions. For a mention, the typed url comes from whoever mentioned you, so treat it as you would any link a colleague sends before pressing Enter.
 
-**What it stores.** Claude Code keeps, across sessions, which cards you dismissed, which Claude session belongs to which card, which session currently shows the pane, your pane choices (theme, where to open, folds, the legend, compact rows, sort), the clone folder you chose in setup and a cache of the last board (card titles, labels, branches) so the pane draws before the first refresh. It writes nothing else to disk and sends nothing anywhere except the GitLab requests above.
+**What it stores.** Claude Code keeps, across sessions, which cards you dismissed, which Claude session belongs to which card, which session currently shows the pane, your pane choices (theme, where to open, folds, the legend, compact rows, sort), the clone folder and GitLab host you chose in setup and a cache of the last board (card titles, labels, branches) so the pane draws before the first refresh. It writes nothing else to disk and sends nothing anywhere except the GitLab requests above.
 
 </details>
 
@@ -166,7 +166,7 @@ WIP-WALL is a mod: it runs inside your Claude Code session with your own rights 
 | What you see | Fix |
 | --- | --- |
 | `glab not found` | `brew install glab`, or set `WIP_WALL_GLAB` to its path |
-| `GitLab host unknown` | `glab auth login`, or set `WIP_WALL_HOST` |
+| `GitLab host unknown` | `glab auth login`, run `/wip-wall setup host <host>`, or set `WIP_WALL_HOST` |
 | `clone root or sessions folder unknown` | none of the default folders exist: run `/wip-wall setup ~/path/to/clones`, or set `WIP_WALL_ROOT` |
 | `No local clone of <project> under <root>` | clone the project under that root; if you moved or renamed it on GitLab, run `git remote set-url origin <new url>` in the clone |
 | Pane is blank | run `/wip-wall`; if it stays blank, run `claude --debug` and look for a `wip-wall:` line |
