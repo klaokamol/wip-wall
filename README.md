@@ -61,7 +61,7 @@ Update with `claude plugin update wip-wall@wip-wall-local`, then `/reload-plugin
 ## First run
 
 1. Start `claude` and run `/wip-wall setup`. The pane shows a checklist: `glab` found, GitLab login, Ghostty installed, Ghostty control allowed, and your clone folder with how many clones it matched. Each line that fails says what to run.
-2. If the clone folder is wrong, press one of the folders the pane lists, or run `/wip-wall setup ~/path/to/clones`. The choice is remembered.
+2. Choose the clone folder with `/wip-wall setup ~/path/to/clones`. The choice is remembered.
 3. Press `[done]`, then `/wip-wall`: your real issues, merge requests and mentions load. `/wip-wall mock` shows sample cards instead and fetches nothing.
 
 If Ghostty is running when you run setup, macOS may ask whether your terminal may control it; allow it. If Ghostty is not running, macOS asks on the first card you open.
@@ -119,11 +119,12 @@ Working, Mentions, Requests and every project section fold with their `[hide]` /
 
 ## Where your clones live
 
-WIP-WALL searches one folder, four levels deep, for git clones and matches each clone's `origin` remote to a GitLab project. It uses the first of these that applies:
+WIP-WALL searches one folder, four levels deep, for git clones and matches each clone's `origin` remote to a GitLab project. It uses the first of these that is set:
 
 1. `$WIP_WALL_ROOT`
-2. the folder you chose with `/wip-wall setup`
-3. the first that exists of `~/Developer/Project-Work`, `~/Developer`, `~/Projects`, `~/src`, `~/code`
+2. the folder you chose with `/wip-wall setup <folder>`
+
+There is no default: until one is set, the pane says `clone root or sessions folder unknown`.
 
 Folder names do not matter: a clone is found by its remote url, so a project whose clone is missing, or whose remote could not be read, gets a "No local clone" toast instead of opening in the wrong repository.
 
@@ -133,7 +134,7 @@ Folder names do not matter: a clone is found by its remote url, so a project who
 | --- | --- |
 | `WIP_WALL_GLAB` | `glab` on `PATH` (also looks in `/opt/homebrew/bin` and `/usr/local/bin`) |
 | `WIP_WALL_HOST` | the host chosen with `/wip-wall setup host <host>`, then `GITLAB_HOST`, then `glab config get host` |
-| `WIP_WALL_ROOT` | the folder chosen with `/wip-wall setup`, else the first existing folder listed above |
+| `WIP_WALL_ROOT` | the folder chosen with `/wip-wall setup <folder>`; no other default |
 
 `WIP_WALL_ROOT` wins over a chosen folder, which suits a shell profile.
 
@@ -167,7 +168,7 @@ WIP-WALL is a mod: it runs inside your Claude Code session with your own rights 
 | --- | --- |
 | `glab not found` | `brew install glab`, or set `WIP_WALL_GLAB` to its path |
 | `GitLab host unknown` | `glab auth login`, run `/wip-wall setup host <host>`, or set `WIP_WALL_HOST` |
-| `clone root or sessions folder unknown` | none of the default folders exist: run `/wip-wall setup ~/path/to/clones`, or set `WIP_WALL_ROOT` |
+| `clone root or sessions folder unknown` | not set: run `/wip-wall setup ~/path/to/clones`, or set `WIP_WALL_ROOT` |
 | `No local clone of <project> under <root>` | clone the project under that root; if you moved or renamed it on GitLab, run `git remote set-url origin <new url>` in the clone |
 | Pane is blank | run `/wip-wall`; if it stays blank, run `claude --debug` and look for a `wip-wall:` line |
 | A card will not open | check `glab auth status` and that Ghostty may be controlled (System Settings, Privacy and Security, Automation) |

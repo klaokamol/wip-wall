@@ -396,7 +396,7 @@ export function mentionView(look: Look, m: Mention, restored = false) {
   )
 }
 
-export function setupView(look: Look, setup: Setup, clones: number, act: { root: (path: string) => unknown; close: () => unknown }) {
+export function setupView(look: Look, setup: Setup, clones: number, act: { close: () => unknown }) {
   const { Box, Text, Button } = look.els
   const { theme } = look
 
@@ -420,12 +420,7 @@ export function setupView(look: Look, setup: Setup, clones: number, act: { root:
         </Box>
       ))}
       <Text color={theme.faint}>{'GitLab host: /wip-wall setup host <host>'}</Text>
-      {setup.roots.length > 0 && <Text color={theme.faint}>{'clone folder: press one, or run /wip-wall setup <folder>'}</Text>}
-      {setup.roots.map((path, n) => (
-        <Button key={`setup:root:${n}`} plain onPress={() => act.root(path)}>
-          <Text color={path === setup.root ? theme.text : theme.muted} bold={path === setup.root}>{`${path === setup.root ? '◉' : '○'} ${path}`}</Text>
-        </Button>
-      ))}
+      <Text color={theme.faint}>{'clone folder: /wip-wall setup <folder>'}</Text>
     </Box>
   )
 }

@@ -53,7 +53,7 @@ const openIn = atom({ plugin: 'wip-wall', key: 'openIn' } as const, 'window')
 const here = atom({ plugin: 'wip-wall', key: 'here' } as const, '')
 const choosing = atom({ plugin: 'wip-wall', key: 'choosing' } as const, '')
 const sessionCwd = atom({ plugin: 'wip-wall', key: 'cwd' } as const, '')
-const NO_SETUP: Setup = { checks: [], roots: [], root: '' }
+const NO_SETUP: Setup = { checks: [] }
 const setup = atom({ plugin: 'wip-wall', key: 'setup' } as const, NO_SETUP)
 
 // ponytail: find stops at depth 4, so a clone nested deeper than root/group/sub/repo is not found; raise -maxdepth if subgroups go deeper
@@ -400,13 +400,6 @@ const refreshFresh = async ($: Dollar) => {
   await refresh($)
 }
 
-const setRoot = async ($: Dollar, path: string) => {
-  const rejected = await saveRoot($, path)
-  if (rejected !== '') return $.ui.toast(rejected)
-  await update($, setup, s => ({ ...s, root: path, checks: s.checks.map(c => (c.clones ? { ...c, ok: true, note: path } : c)) }))
-  void refreshFresh($).catch(() => undefined)
-}
-
 const cycleTheme = async ($: Dollar) => {
   const names = Object.keys(THEMES)
   const next = names[(names.indexOf(await read($, themeName)) + 1) % names.length]
@@ -736,7 +729,6 @@ export const register: Register = on => {
         )}
         {setupNow.checks.length > 0 &&
           setupView(look, setupNow, new Set(Object.values(clones)).size, {
-            root: path => setRoot($, path),
             close: () => {
               setupRun += 1
 

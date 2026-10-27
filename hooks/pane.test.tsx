@@ -63,7 +63,6 @@ const REMOTE_OF: Record<string, string> = {
   '/Users/dev/Developer/Project-Work/PROJ-X/web': 'https://gitlab.example.com/acme-team/web.git',
 }
 let remotes = REMOTE_OF
-let roots = '/Users/dev/Developer/Project-Work\n/Users/dev/Developer\n'
 let clones = '/Users/dev/Developer/Project-Work/core/lib/.git\n/Users/dev/Developer/Project-Work/PROJ-X/web/.git\n'
 
 let reviewNodes: readonly object[] = []
@@ -156,9 +155,7 @@ const boot = async ($: any, on: any, cwd = FIXTURE_ROOT, issues: readonly object
         ? liveFiles
         : cmd === 'sh' && e.argv[2]?.includes('d=$HOME')
         ? (e.argv[4] ?? '')
-        : cmd === 'sh' && e.argv[2]?.includes('echo "$HOME/$r"')
-          ? roots
-          : cmd === 'sh' && e.argv[3] === 'sh'
+        : cmd === 'sh' && e.argv[3] === 'sh'
         ? e.argv.slice(4).map(path => `${path}\t${remotes[path] ?? ''}`).join('\n')
         : cmd === 'sh'
           ? `/opt/homebrew/bin/glab\n${e.init?.env?.WIP_WALL_SAVED_HOST || 'gitlab.example.com'}\n${e.init?.env?.WIP_WALL_SAVED_ROOT || '/Users/dev/Developer/Project-Work'}\n/Users/dev/.claude/projects\n`
@@ -1722,14 +1719,13 @@ const settle = async () => {
 }
 const setupRows = async (ui: any) => (await ui.findAll({ type: 'Text', text: /^(glab|GitLab login|Ghostty|Ghostty control|Clone folder) {2}$/ })).length
 
-test('/wip-wall setup draws the checklist and its clone folders; done and a plain /wip-wall close it', async ($, on) => {
+test('/wip-wall setup draws the checklist and names the folder command; done and a plain /wip-wall close it', async ($, on) => {
   const ui = await boot($, on, FIXTURE_ROOT, ISSUES, 'setup')
   await settle()
 
   expect(await setupRows(ui)).toBe(5)
   expect(await ui.find({ type: 'Text', text: /2 clones matched/ })).toBeDefined()
-  expect(await ui.find({ key: 'setup:root:0' })).toBeDefined()
-  expect(await ui.find({ key: 'setup:root:1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /clone folder: \/wip-wall setup <folder>/ })).toBeDefined()
 
   await $.ui.press({ plugin: 'wip-wall', key: 'setup:close' })
   expect(await setupRows(ui)).toBe(0)
@@ -1777,20 +1773,3 @@ test('/wip-wall setup host saves a bare host, strips a url, refuses a path, and 
   }
 })
 
-test('pressing a clone folder saves it and rescans that folder', async ($, on) => {
-  const ui = await boot($, on, FIXTURE_ROOT, ISSUES, 'setup')
-  try {
-    await settle()
-    expect(ran.some(a => a[0] === 'find' && a[1] === '/Users/dev/Developer')).toBe(false)
-
-    await $.ui.press({ plugin: 'wip-wall', key: 'setup:root:1' })
-    await settle()
-
-    expect(storedValues.filter(e => e.key === 'ui:root').map(e => e.value)).toEqual(['/Users/dev/Developer'])
-    expect(ran.some(a => a[0] === 'find' && a[1] === '/Users/dev/Developer')).toBe(true)
-  } finally {
-    await $.command.run({ command: 'wip-wall', args: `setup ${FIXTURE_ROOT}`, ...TYPED_RUN })
-    await settle()
-    await ui.unmount()
-  }
-})

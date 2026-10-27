@@ -34,7 +34,7 @@ export type Mention = {
 
 export type SetupCheck = { label: string; ok: boolean; note: string; clones?: true }
 
-export type Setup = { checks: SetupCheck[]; roots: string[]; root: string }
+export type Setup = { checks: SetupCheck[] }
 
 declare module 'claude-code' {
   interface PluginState {
