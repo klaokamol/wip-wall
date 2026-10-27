@@ -36,6 +36,7 @@ let alive = ''
 let branchName = ''
 let liveFiles = ''
 let selected = 'gone\n'
+let focused = 'gone\n'
 let panes: { id: string }[] = []
 const openCard = async ($: any, key: string, place = 'window') => {
   await $.ui.press({ plugin: 'wip-wall', key: `open:${key}:0` })
@@ -166,7 +167,7 @@ const boot = async ($: any, on: any, cwd = FIXTURE_ROOT, issues: readonly object
         : cmd === 'uuidgen'
         ? 'NEW-SID\n'
         : cmd === 'osascript'
-        ? (e.argv[2]?.includes('select tab') ? selected : 'tab-1\n')
+        ? (e.argv[2]?.includes('select tab') ? selected : e.argv[2]?.includes('working directory is') ? focused : 'tab-1\n')
         : cmd === 'git'
           ? (branchName !== '' ? `${branchName}\n` : arg === '-C' && e.argv[2]?.endsWith('/core/lib') ? '1-open-one\nmain\n' : 'main\n')
         : cmd === 'find' && arg === '/Users/dev/.claude/projects'
@@ -1477,6 +1478,43 @@ test('pressing a card whose Claude still runs brings its tab forward and opens n
   } finally {
     alive = ''
     selected = 'gone\n'
+  }
+})
+
+const liveCard = `Mon Oct  5 09:15:08 2026\t${JSON.stringify({ pid: 4242, sessionId: 's1', cwd: '/Users/dev/Developer/Project-Work/core/lib', procStart: 'Mon Oct 5 09:15:08 2026' })}`
+
+test('a running card whose tab is gone is found by its folder and focused', async ($, on) => {
+  liveFiles = liveCard
+  focused = 'ok\n'
+  try {
+    const ui = await boot($, on)
+    await $.ui.press({ plugin: 'wip-wall', key: 'open:acme/core/lib#1:0' })
+
+    expect(ran.some(a => a[0] === 'osascript' && a[2]?.includes('working directory is') && a[a.length - 1] === '/Users/dev/Developer/Project-Work/core/lib')).toBe(true)
+    expect(toasts.some(t => /Claude runs/.test(t))).toBe(false)
+    expect(launches()).toHaveLength(0)
+    await ui.unmount()
+  } finally {
+    liveFiles = ''
+    focused = 'gone\n'
+  }
+})
+
+test('a running card that Ghostty cannot find says which pid runs it, and several matches are not guessed', async ($, on) => {
+  liveFiles = liveCard
+  try {
+    const ui = await boot($, on)
+    await $.ui.press({ plugin: 'wip-wall', key: 'open:acme/core/lib#1:0' })
+    expect(toasts.some(t => /pid 4242.*does not list/.test(t))).toBe(true)
+    toasts.length = 0
+    focused = 'many\n'
+    await $.ui.press({ plugin: 'wip-wall', key: 'open:acme/core/lib#1:0' })
+    expect(toasts.some(t => /pid 4242.*several Ghostty terminals/.test(t))).toBe(true)
+    expect(launches()).toHaveLength(0)
+    await ui.unmount()
+  } finally {
+    liveFiles = ''
+    focused = 'gone\n'
   }
 })
 

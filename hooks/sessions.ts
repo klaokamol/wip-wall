@@ -44,6 +44,18 @@ return "gone"
 end tell
 end run`
 
+const FOCUS_CWD = `on run argv
+tell application "Ghostty"
+set hits to every terminal whose working directory is (item 1 of argv)
+if (count of hits) is 1 then
+focus (item 1 of hits)
+return "ok"
+end if
+if (count of hits) is 0 then return "gone"
+return "many"
+end tell
+end run`
+
 async function savedSessions($: Dollar): Promise<Map<string, number>> {
   const { sessions } = await settingsOf($)
   const found = await $.process.run(['find', sessions, '-maxdepth', '2', '-name', '*.jsonl', '-exec', 'stat', '-f', '%m %N', '{}', '+'])
@@ -73,14 +85,16 @@ done`
 
 const squeeze = (text: unknown): string => String(text).trim().replace(/\s+/g, ' ')
 
-async function liveSessionIds($: Dollar): Promise<string[]> {
+type Live = { sid: string; pid: number; cwd: string }
+
+async function liveSessions($: Dollar): Promise<Live[]> {
   const ran = await $.process.run(['sh', '-c', LIVE_SESSIONS])
 
   return ran.stdout.split('\n').flatMap(line => {
     const [started = '', ...rest] = line.split('\t')
     try {
-      const file = JSON.parse(rest.join('\t')) as { sessionId?: unknown; procStart?: unknown }
-      return typeof file.sessionId === 'string' && squeeze(file.procStart) === squeeze(started) ? [file.sessionId] : []
+      const file = JSON.parse(rest.join('\t')) as { sessionId?: unknown; procStart?: unknown; pid?: unknown; cwd?: unknown }
+      return typeof file.sessionId === 'string' && squeeze(file.procStart) === squeeze(started) ? [{ sid: file.sessionId, pid: Number(file.pid) || 0, cwd: typeof file.cwd === 'string' ? file.cwd : '' }] : []
     } catch {
       return []
     }
@@ -88,10 +102,10 @@ async function liveSessionIds($: Dollar): Promise<string[]> {
 }
 
 async function runningSids($: Dollar): Promise<Set<string>> {
-  const [ran, live] = await Promise.all([$.process.run(['ps', '-axww', '-o', 'command=']), liveSessionIds($).catch(() => [])])
+  const [ran, live] = await Promise.all([$.process.run(['ps', '-axww', '-o', 'command=']), liveSessions($).catch(() => [])])
   if (ran.exitCode !== 0) throw new Error(`ps exit ${ran.exitCode}`)
 
-  return new Set([...ran.stdout.split(/\s+/).filter(Boolean), ...live])
+  return new Set([...ran.stdout.split(/\s+/).filter(Boolean), ...live.map(l => l.sid)])
 }
 
 const isFresh = (session: Session | undefined): boolean => Date.now() - (session?.at ?? 0) <= LAUNCH_GRACE_MS
@@ -172,13 +186,23 @@ export async function focusRunning($: Dollar, card: Card): Promise<boolean> {
     return true
   }
   if (!running.has(known.sid)) return false
-  const picked = await $.process.run(['osascript', '-e', SELECT_TAB, known.tab], { timeoutMs: 5000 }).catch(() => undefined)
-  if (!picked) {
+  const picked = known.tab === '' ? undefined : await $.process.run(['osascript', '-e', SELECT_TAB, known.tab], { timeoutMs: 5000 }).catch(() => undefined)
+  if (known.tab !== '' && !picked) {
     $.ui.toast('Ghostty did not answer: allow it in System Settings, Privacy and Security, Automation')
 
     return true
   }
-  if (picked.stdout.trim() !== 'ok') $.ui.toast("This card's Claude session runs in a terminal wip-wall did not open (a hand-started claude or a split): switch to it there")
+  if (picked?.stdout.trim() === 'ok') return true
+  const live = (await liveSessions($).catch(() => [])).find(l => l.sid === known.sid)
+  const byCwd = live && live.cwd !== '' ? await $.process.run(['osascript', '-e', FOCUS_CWD, live.cwd], { timeoutMs: 5000 }).catch(() => undefined) : undefined
+  if (byCwd?.stdout.trim() === 'ok') return true
+  const tty = live ? (await $.process.run(['ps', '-o', 'tty=', '-p', String(live.pid)]).catch(() => undefined))?.stdout.trim() : ''
+  const where = live ? ` (pid ${live.pid}${tty ? `, ${clean(tty)}` : ''})` : ''
+  $.ui.toast(
+    byCwd?.stdout.trim() === 'many'
+      ? `This card's Claude runs${where} in a folder with several Ghostty terminals: switch to it there`
+      : `This card's Claude runs${where} in a terminal Ghostty does not list (a quick terminal, another app or a hidden window): switch to it there`,
+  )
 
   return true
 }
