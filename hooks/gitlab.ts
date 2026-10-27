@@ -87,34 +87,50 @@ export async function saveHost($: Dollar, typed: string): Promise<string> {
   return ''
 }
 
-export async function setupOf($: Dollar): Promise<Setup> {
+async function requiredOf($: Dollar): Promise<{ glab: SetupCheck; login: SetupCheck; clone: SetupCheck }> {
   const raw = await detect($)
   const saved = await savedRoot($)
   const chosenHost = await savedHost($)
   const hasGlab = raw.glab !== ''
   const loggedIn = hasGlab && raw.host !== '' && (await $.process.run([raw.glab, 'auth', 'status', '--hostname', raw.host])).exitCode === 0
-  const installed = (await $.process.run(['osascript', '-e', 'id of application "Ghostty"'])).exitCode === 0
-  const probe = installed ? await $.process.run(['osascript', '-e', PROBE]) : undefined
   const rootExists = raw.root !== '' && (await $.process.run(['test', '-d', raw.root])).exitCode === 0
   const loginNote = raw.host === '' ? 'no host: run /wip-wall setup host <gitlab host>' : `run glab auth login --hostname ${raw.host}`
-  const checks: SetupCheck[] = [
-    { label: 'glab', ok: hasGlab, note: hasGlab ? raw.glab : 'brew install glab, or set WIP_WALL_GLAB' },
-    { label: 'GitLab login', ok: loggedIn, note: loggedIn ? (chosenHost !== '' && chosenHost !== raw.host ? `${raw.host} (WIP_WALL_HOST overrides the host chosen here)` : raw.host) : hasGlab ? loginNote : 'needs glab first' },
+
+  return {
+    glab: { label: 'glab', ok: hasGlab, note: hasGlab ? raw.glab : 'brew install glab, or set WIP_WALL_GLAB' },
+    login: { label: 'GitLab login', ok: loggedIn, note: loggedIn ? (chosenHost !== '' && chosenHost !== raw.host ? `${raw.host} (WIP_WALL_HOST overrides the host chosen here)` : raw.host) : hasGlab ? loginNote : 'needs glab first' },
+    clone: {
+      label: 'Clone folder',
+      ok: rootExists,
+      note: raw.root === '' ? 'not set: run /wip-wall setup <folder>' : !rootExists ? `${raw.root} is not a folder: run /wip-wall setup <folder>` : saved !== '' && saved !== raw.root ? `${raw.root} (WIP_WALL_ROOT overrides the folder chosen here)` : raw.root,
+      clones: true,
+    },
+  }
+}
+
+const cleaned = (checks: SetupCheck[]): Setup => ({ checks: checks.map(c => ({ ...c, note: clean(c.note) })) })
+
+export async function gateOf($: Dollar): Promise<{ ready: boolean; setup: Setup }> {
+  forgetSettings()
+  const { glab, login, clone } = await requiredOf($)
+
+  return { ready: glab.ok && login.ok && clone.ok, setup: cleaned([glab, login, clone]) }
+}
+
+export async function setupOf($: Dollar): Promise<Setup> {
+  const { glab, login, clone } = await requiredOf($)
+  const installed = (await $.process.run(['osascript', '-e', 'id of application "Ghostty"'])).exitCode === 0
+  const probe = installed ? await $.process.run(['osascript', '-e', PROBE]) : undefined
+  const ghostty: SetupCheck[] = [
     { label: 'Ghostty', ok: installed, note: installed ? 'installed' : 'install it from ghostty.org' },
     {
       label: 'Ghostty control',
       ok: probe !== undefined && probe.exitCode === 0,
       note: probe === undefined ? 'needs Ghostty first' : probe.exitCode !== 0 ? 'allow it in System Settings, Privacy and Security, Automation' : probe.stdout.trim() === 'idle' ? 'Ghostty is not running: macOS asks on the first open' : 'allowed',
     },
-    {
-      label: 'Clone folder',
-      ok: rootExists,
-      note: raw.root === '' ? 'not set: run /wip-wall setup <folder>' : saved !== '' && saved !== raw.root ? `${raw.root} (WIP_WALL_ROOT overrides the folder chosen here)` : raw.root,
-      clones: true,
-    },
   ]
 
-  return { checks: checks.map(c => ({ ...c, note: clean(c.note) })) }
+  return cleaned([glab, login, ...ghostty, clone])
 }
 
 async function run($: Dollar, argv: string[]): Promise<string> {

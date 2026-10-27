@@ -396,7 +396,7 @@ export function mentionView(look: Look, m: Mention, restored = false) {
   )
 }
 
-export function setupView(look: Look, setup: Setup, clones: number, act: { close: () => unknown }) {
+export function setupView(look: Look, setup: Setup, clones: number, act: { close?: () => unknown }) {
   const { Box, Text, Button } = look.els
   const { theme } = look
 
@@ -406,16 +406,18 @@ export function setupView(look: Look, setup: Setup, clones: number, act: { close
         <Box flexShrink={1}>
           <Text color={theme.faint} wrap="truncate-end">{`── Setup ${'─'.repeat(Math.max(0, look.lineWidth - 16))}`}</Text>
         </Box>
-        <Button key="setup:close" plain onPress={act.close}>
-          <Text color={theme.muted}>[done]</Text>
-        </Button>
+        {act.close && (
+          <Button key="setup:close" plain onPress={act.close}>
+            <Text color={theme.muted}>[done]</Text>
+          </Button>
+        )}
       </Box>
       {setup.checks.map(check => (
         <Box key={`setup:${check.label}`} columnGap={1}>
           <Text bold color={check.ok ? theme.good : theme.bad}>{check.ok ? '✓' : '✗'}</Text>
           <Box flexShrink={1}>
             <Text color={theme.text}>{`${check.label}  `}</Text>
-            <Text color={theme.muted}>{check.clones && check.ok ? `${check.note} · ${clones} ${clones === 1 ? 'clone' : 'clones'} matched` : check.note}</Text>
+            <Text color={theme.muted}>{check.clones && check.ok && clones > 0 ? `${check.note} · ${clones} ${clones === 1 ? 'clone' : 'clones'} matched` : check.note}</Text>
           </Box>
         </Box>
       ))}

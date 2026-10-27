@@ -56,6 +56,8 @@ const tick = async () => {
 let launchFails = false
 let issuesFail = false
 let psFail = false
+let noRoot = false
+let authFail = false
 const opened: string[] = []
 let registered = 0
 const REMOTE_OF: Record<string, string> = {
@@ -158,7 +160,7 @@ const boot = async ($: any, on: any, cwd = FIXTURE_ROOT, issues: readonly object
         : cmd === 'sh' && e.argv[3] === 'sh'
         ? e.argv.slice(4).map(path => `${path}\t${remotes[path] ?? ''}`).join('\n')
         : cmd === 'sh'
-          ? `/opt/homebrew/bin/glab\n${e.init?.env?.WIP_WALL_SAVED_HOST || 'gitlab.example.com'}\n${e.init?.env?.WIP_WALL_SAVED_ROOT || '/Users/dev/Developer/Project-Work'}\n/Users/dev/.claude/projects\n`
+          ? `/opt/homebrew/bin/glab\n${e.init?.env?.WIP_WALL_SAVED_HOST || 'gitlab.example.com'}\n${e.init?.env?.WIP_WALL_SAVED_ROOT || (noRoot ? '' : '/Users/dev/Developer/Project-Work')}\n/Users/dev/.claude/projects\n`
         : cmd === 'ps'
         ? alive
         : cmd === 'uuidgen'
@@ -178,7 +180,7 @@ const boot = async ($: any, on: any, cwd = FIXTURE_ROOT, issues: readonly object
                 : e.argv.at(-1)?.startsWith('todos')
                   ? todos.map(t => JSON.stringify(t)).join('\n')
                   : '[]'
-    const failing = (todosFail && e.argv[e.argv.length - 1]?.startsWith('todos')) || (launchFails && cmd === 'osascript' && e.argv[2]?.includes('new window')) || (issuesFail && e.argv[e.argv.length - 1]?.startsWith('issues')) || (psFail && cmd === 'ps')
+    const failing = (todosFail && e.argv[e.argv.length - 1]?.startsWith('todos')) || (launchFails && cmd === 'osascript' && e.argv[2]?.includes('new window')) || (issuesFail && e.argv[e.argv.length - 1]?.startsWith('issues')) || (psFail && cmd === 'ps') || (authFail && e.argv[1] === 'auth')
 
     return { value: { exitCode: failing ? 1 : 0, stdout, stderr: failing ? (issuesFail ? 'boom\u001b[2J\u0007' : 'todos boom') : '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
@@ -1073,6 +1075,91 @@ test('a session outside the clone root does not open the pane or poll GitLab, bu
   await $.command.run({ command: 'wip-wall', args: '', ...TYPED_RUN })
   expect(opened).toContain('wip-wall')
   await ui.unmount()
+})
+
+const filtersShown = async (ui: any) => (await ui.find({ type: 'Text', text: /Filters/ })) !== undefined
+const reachedGitlab = () => ran.some(argv => argv[1] === 'api' || (argv[0] === 'find' && argv[1] === FIXTURE_ROOT))
+
+test('with no clone root set the pane stays closed, then /wip-wall draws only the checklist: no filters, no done, no fetch', async ($, on) => {
+  noRoot = true
+  try {
+    const ui = await boot($, on, FIXTURE_ROOT, ISSUES, null)
+    expect(opened).toEqual([])
+    expect(reachedGitlab()).toBe(false)
+    await $.command.run({ command: 'wip-wall', args: '', ...TYPED_RUN })
+    await settle()
+    expect(opened).toContain('wip-wall')
+    expect(await ui.find({ type: 'Text', text: /not set: run \/wip-wall setup <folder>/ })).toBeDefined()
+    expect(await filtersShown(ui)).toBe(false)
+    expect(await ui.find({ key: 'setup:close' })).toBeUndefined()
+    expect(await ui.find({ key: 'compact:toggle' })).toBeUndefined()
+    expect(reachedGitlab()).toBe(false)
+    await ui.unmount()
+  } finally {
+    noRoot = false
+  }
+})
+
+test('a failed GitLab login blocks the pane the same way', async ($, on) => {
+  authFail = true
+  try {
+    const ui = await boot($, on, FIXTURE_ROOT, ISSUES, '')
+    await settle()
+    expect(await filtersShown(ui)).toBe(false)
+    expect(await ui.find({ type: 'Text', text: /run glab auth login --hostname/ })).toBeDefined()
+    expect(reachedGitlab()).toBe(false)
+    await ui.unmount()
+  } finally {
+    authFail = false
+  }
+})
+
+test('the refresh and liveness timers do nothing while the gate is blocked', async ($, on) => {
+  noRoot = true
+  try {
+    panes = [{ id: 'wip-wall' }]
+    const ui = await boot($, on, FIXTURE_ROOT, ISSUES, '')
+    await settle()
+    ran.length = 0
+    await tick()
+    await tick()
+    expect(reachedGitlab()).toBe(false)
+    await ui.unmount()
+  } finally {
+    noRoot = false
+    panes = []
+  }
+})
+
+test('/wip-wall setup <folder> from a blocked pane saves it, passes the gate and loads the board', async ($, on) => {
+  noRoot = true
+  try {
+    const ui = await boot($, on, FIXTURE_ROOT, ISSUES, '')
+    await settle()
+    expect(await filtersShown(ui)).toBe(false)
+    await $.command.run({ command: 'wip-wall', args: `setup ${FIXTURE_ROOT}`, ...TYPED_RUN })
+    await settle()
+    expect(storedValues.filter(e => e.key === 'ui:root').map(e => e.value)).toEqual([FIXTURE_ROOT])
+    expect(await filtersShown(ui)).toBe(true)
+    expect(await ui.find({ key: 'setup:close' })).toBeDefined()
+    expect(ran.some(argv => argv[1] === 'api')).toBe(true)
+    await ui.unmount()
+  } finally {
+    noRoot = false
+  }
+})
+
+test('/wip-wall mock still shows cards while the gate is blocked', async ($, on) => {
+  noRoot = true
+  try {
+    const ui = await boot($, on, FIXTURE_ROOT, ISSUES, 'mock')
+    await settle()
+    expect(await filtersShown(ui)).toBe(true)
+    expect(reachedGitlab()).toBe(false)
+    await ui.unmount()
+  } finally {
+    noRoot = false
+  }
 })
 
 test('after /clear a pane opened by /wip-wall outside the clone root comes back and polls again', async ($, on) => {

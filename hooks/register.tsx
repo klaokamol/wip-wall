@@ -5,7 +5,7 @@ import type { Card, Mention, Setup } from '../types'
 import { MOCK, MOCK_HERE, MOCK_LIVE, MOCK_LOCAL, MOCK_MENTIONS, MOCK_RESUMABLE, MOCK_REVIEWS } from './mock'
 import { ageOf, dirOf, dirsOf, isWebUrl, paneOf, reviewsOf, staleHides, titleOf, toCards } from './board'
 import type { Orders } from './board'
-import { boardOf, fetchBoard, messageOf, saveHost, saveRoot, settingsOf, setupOf } from './gitlab'
+import { boardOf, fetchBoard, gateOf, messageOf, saveHost, saveRoot, settingsOf, setupOf } from './gitlab'
 import { cardStatus, claimCard, focusRunning, isCardWindow, openCardSession, pruneCardSessions, releaseBranchCard } from './sessions'
 import type { Place } from './sessions'
 import { THEMES } from './themes'
@@ -55,6 +55,7 @@ const choosing = atom({ plugin: 'wip-wall', key: 'choosing' } as const, '')
 const sessionCwd = atom({ plugin: 'wip-wall', key: 'cwd' } as const, '')
 const NO_SETUP: Setup = { checks: [] }
 const setup = atom({ plugin: 'wip-wall', key: 'setup' } as const, NO_SETUP)
+const gate = atom({ plugin: 'wip-wall', key: 'gate' } as const, 'checking' as 'checking' | 'blocked' | 'ready')
 
 // ponytail: find stops at depth 4, so a clone nested deeper than root/group/sub/repo is not found; raise -maxdepth if subgroups go deeper
 const scanDirs = async ($: Dollar) => {
@@ -94,6 +95,7 @@ const retitle = async ($: Dollar) => {
 }
 
 let mocking = false
+let ready = false
 
 const MOCK_NOTE = 'Mock cards are not real: run /wip-wall to restore'
 
@@ -159,7 +161,7 @@ const refresh = ($: Dollar): Promise<void> => (refreshing ??= reload($).finally(
 }))
 
 const reload = async ($: Dollar) => {
-  if (mocking) return
+  if (mocking || !ready) return
   try {
     const { issues, mrs, reviews: asked, mentions: pinged, failures } = await fetchBoard($)
     const list = toCards(issues, mrs)
@@ -395,6 +397,24 @@ const loadPrefs = async ($: Dollar) => {
 
 let setupRun = 0
 
+const checkGate = async ($: Dollar, show = false): Promise<boolean> => {
+  ready = false
+  const checked = await gateOf($)
+  ready = checked.ready
+  await update($, gate, () => (checked.ready ? 'ready' : 'blocked'))
+  if (!checked.ready || show) await update($, setup, () => checked.setup)
+
+  return checked.ready
+}
+
+const fillSetup = ($: Dollar, run: number) =>
+  void setupOf($)
+    .catch(() => NO_SETUP)
+    .then(async checked => {
+      if (run === setupRun && !mocking && checked.checks.length > 0) await update($, setup, () => checked)
+    })
+    .catch(() => undefined)
+
 const refreshFresh = async ($: Dollar) => {
   await refreshing
   await refresh($)
@@ -437,12 +457,12 @@ const poll = ($: Dollar) => {
 
         return
       }
-      if (!(await paneOpen($).catch(() => false))) return
+      if (!ready || !(await paneOpen($).catch(() => false))) return
       await refresh($)
       skip = Math.min(unchanged, MAX_BACKOFF)
     }),
     $.clock.every(LIVE_MS, async () => {
-      if (!(await paneOpen($).catch(() => false))) return
+      if (!ready || !(await paneOpen($).catch(() => false))) return
       await claimPane($)
       await syncLive($)
     }),
@@ -478,7 +498,7 @@ const start = async ($: Dollar, paneShown = false) => {
   void claimBranchCard($).catch(() => undefined)
   const shown = paneShown || (await paneOpen($).catch(() => false))
   if (!shown && (await isCardWindow($).catch(() => false))) return
-  if (!shown && !(await insideRoot($).catch(() => true))) return
+  if (!shown && !(await insideRoot($).catch(() => false))) return
   if (!shown && (await otherPane($).catch(() => false))) return
   void claimPane($).catch(() => undefined)
   const kept = carried
@@ -499,6 +519,11 @@ const start = async ($: Dollar, paneShown = false) => {
     })
     .catch(() => false)
     .then(async picked => {
+      if (!(await checkGate($))) {
+        fillSetup($, setupRun)
+
+        return
+      }
       await refresh($)
       await syncLive($)
       if (!kept && !picked && before === `${await read($, group)}/${await read($, tab)}`) await selectByCwd($)
@@ -574,12 +599,14 @@ export const register: Register = on => {
         rejected = await saveRoot($, folder)
         saved = rejected === ''
       }
-      void setupOf($)
-        .catch(() => NO_SETUP)
-        .then(async checked => {
-          if (run === setupRun && !mocking) await update($, setup, () => checked)
-        })
-        .catch(() => undefined)
+    }
+    const passed = await checkGate($, setting)
+    if (setting || !passed) fillSetup($, run)
+    if (!passed) {
+      await $.ui.open({ id: PANE, title: await paneTitle($) })
+      await claimPane($)
+
+      return { text: rejected !== '' ? `Not saved: ${rejected}` : 'WIP-WALL needs setup: see the pane' }
     }
     if (!polling) await Promise.all([syncHidden($), loadPrefs($), $.session.cwd().then(cwd => update($, sessionCwd, () => cwd))])
     await (saved ? refreshFresh($) : refresh($))
@@ -629,6 +656,7 @@ export const register: Register = on => {
     const dateOpen = await read($, dateMenu)
     const sortOpen = await read($, sortMenu)
     const setupNow = await read($, setup)
+    const gateNow = await read($, gate)
     const view = paneOf(
       {
         cards: saved?.cards ?? cardsNow,
@@ -689,6 +717,15 @@ export const register: Register = on => {
         },
       },
     }
+    if (gateNow === 'blocked' && !mocking)
+      return (
+        <Box flexDirection="column" minHeight={e.props.placement === 'dock' ? e.props.scroll?.bodyRows : undefined}>
+          <Box justifyContent="center" marginBottom={1}>
+            <Text bold color={TEXT}><Text color={colorOf('doing')}>WIP</Text>-WALL</Text>
+          </Box>
+          {setupView(look, setupNow, 0, {})}
+        </Box>
+      )
     const grid = (list: Card[], prefix: string) =>
       compactOn
         ? list.map(card => cardRow(look, card))

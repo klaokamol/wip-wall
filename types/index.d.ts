@@ -73,6 +73,7 @@ declare module 'claude-code' {
       choosing: string
       cwd: string
       setup: Setup
+      gate: 'checking' | 'blocked' | 'ready'
     }
   }
 }
