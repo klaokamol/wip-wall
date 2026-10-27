@@ -9,7 +9,7 @@ type Els = ReturnType<Dollar['ui']['resolve']>
 
 export const MARQUEE_STEP_MS = 250
 
-const PLACES: Place[] = ['window', 'tab', 'split', 'here']
+const PLACES: Place[] = ['here', 'split', 'tab', 'window']
 
 export type Act = {
   open: (card: Card) => unknown
@@ -136,19 +136,17 @@ export function picker(look: Look, label: string, id: string, isOpen: boolean, s
 function chooser(look: Look, card: Card) {
   const { Box, Text, Button } = look.els
   const { muted: MUTED, faint: FAINT, text: TEXT } = look.theme
-  const places = [look.lastPlace, ...PLACES.filter(p => p !== look.lastPlace)]
-
   return (
     <Box key={`choose:${card.key}`} columnGap={1}>
       <Text color={MUTED}>open:</Text>
-      {places.map(place =>
+      {PLACES.map(place =>
         place === 'here' && !look.canHere(card) ? (
           <Button key={`choose:${card.key}:${place}`} plain onPress={() => look.act.noHere(card)}>
             <Text color={FAINT}>{`[${place}]`}</Text>
           </Button>
         ) : (
           <Button key={`choose:${card.key}:${place}`} plain onPress={() => look.act.openAt(card, place)}>
-            <Text bold color={TEXT}>{`[${place}]`}</Text>
+            <Text bold={place === look.lastPlace} color={place === look.lastPlace ? TEXT : MUTED}>{`[${place}]`}</Text>
           </Button>
         ),
       )}
@@ -398,7 +396,7 @@ export function mentionView(look: Look, m: Mention, restored = false) {
   )
 }
 
-export function setupView(look: Look, setup: Setup, clones: number, act: { root: (path: string) => unknown; close: () => unknown }) {
+export function setupView(look: Look, setup: Setup, clones: number, act: { close?: () => unknown }) {
   const { Box, Text, Button } = look.els
   const { theme } = look
 
@@ -408,25 +406,23 @@ export function setupView(look: Look, setup: Setup, clones: number, act: { root:
         <Box flexShrink={1}>
           <Text color={theme.faint} wrap="truncate-end">{`── Setup ${'─'.repeat(Math.max(0, look.lineWidth - 16))}`}</Text>
         </Box>
-        <Button key="setup:close" plain onPress={act.close}>
-          <Text color={theme.muted}>[done]</Text>
-        </Button>
+        {act.close && (
+          <Button key="setup:close" plain onPress={act.close}>
+            <Text color={theme.muted}>[done]</Text>
+          </Button>
+        )}
       </Box>
       {setup.checks.map(check => (
         <Box key={`setup:${check.label}`} columnGap={1}>
           <Text bold color={check.ok ? theme.good : theme.bad}>{check.ok ? '✓' : '✗'}</Text>
           <Box flexShrink={1}>
             <Text color={theme.text}>{`${check.label}  `}</Text>
-            <Text color={theme.muted}>{check.clones && check.ok ? `${check.note} · ${clones} ${clones === 1 ? 'clone' : 'clones'} matched` : check.note}</Text>
+            <Text color={theme.muted}>{check.clones && check.ok && clones > 0 ? `${check.note} · ${clones} ${clones === 1 ? 'clone' : 'clones'} matched` : check.note}</Text>
           </Box>
         </Box>
       ))}
-      {setup.roots.length > 0 && <Text color={theme.faint}>{'clone folder: press one, or run /wip-wall setup <folder>'}</Text>}
-      {setup.roots.map((path, n) => (
-        <Button key={`setup:root:${n}`} plain onPress={() => act.root(path)}>
-          <Text color={path === setup.root ? theme.text : theme.muted} bold={path === setup.root}>{`${path === setup.root ? '◉' : '○'} ${path}`}</Text>
-        </Button>
-      ))}
+      <Text color={theme.faint}>{'GitLab host: /wip-wall setup host <host>'}</Text>
+      <Text color={theme.faint}>{'clone folder: /wip-wall setup <folder>'}</Text>
     </Box>
   )
 }

@@ -36,6 +36,7 @@ let alive = ''
 let branchName = ''
 let liveFiles = ''
 let selected = 'gone\n'
+let focused = 'gone\n'
 let panes: { id: string }[] = []
 const openCard = async ($: any, key: string, place = 'window') => {
   await $.ui.press({ plugin: 'wip-wall', key: `open:${key}:0` })
@@ -55,6 +56,8 @@ const tick = async () => {
 let launchFails = false
 let issuesFail = false
 let psFail = false
+let noRoot = false
+let authFail = false
 const opened: string[] = []
 let registered = 0
 const REMOTE_OF: Record<string, string> = {
@@ -62,7 +65,6 @@ const REMOTE_OF: Record<string, string> = {
   '/Users/dev/Developer/Project-Work/PROJ-X/web': 'https://gitlab.example.com/acme-team/web.git',
 }
 let remotes = REMOTE_OF
-let roots = '/Users/dev/Developer/Project-Work\n/Users/dev/Developer\n'
 let clones = '/Users/dev/Developer/Project-Work/core/lib/.git\n/Users/dev/Developer/Project-Work/PROJ-X/web/.git\n'
 
 let reviewNodes: readonly object[] = []
@@ -127,7 +129,7 @@ const boot = async ($: any, on: any, cwd = FIXTURE_ROOT, issues: readonly object
     return { value: undefined }
   })
   on('store.get', (_: unknown, e: { key: string }) => ({
-    value: e.key === 'ui:root' || ((e.key.startsWith('card:') || e.key === 'pane:owner') && storedValues.some(v => v.key === e.key))
+    value: e.key === 'ui:root' || e.key === 'ui:host' || ((e.key.startsWith('card:') || e.key === 'pane:owner') && storedValues.some(v => v.key === e.key))
       ? storedValues.findLast(v => v.key === e.key)?.value
       : e.key in hides
       ? hides[e.key]
@@ -155,18 +157,16 @@ const boot = async ($: any, on: any, cwd = FIXTURE_ROOT, issues: readonly object
         ? liveFiles
         : cmd === 'sh' && e.argv[2]?.includes('d=$HOME')
         ? (e.argv[4] ?? '')
-        : cmd === 'sh' && e.argv[2]?.includes('echo "$HOME/$r"')
-          ? roots
-          : cmd === 'sh' && e.argv[3] === 'sh'
+        : cmd === 'sh' && e.argv[3] === 'sh'
         ? e.argv.slice(4).map(path => `${path}\t${remotes[path] ?? ''}`).join('\n')
         : cmd === 'sh'
-          ? `/opt/homebrew/bin/glab\ngitlab.example.com\n${e.init?.env?.WIP_WALL_SAVED_ROOT || '/Users/dev/Developer/Project-Work'}\n/Users/dev/.claude/projects\n`
+          ? `/opt/homebrew/bin/glab\n${e.init?.env?.WIP_WALL_SAVED_HOST || 'gitlab.example.com'}\n${e.init?.env?.WIP_WALL_SAVED_ROOT || (noRoot ? '' : '/Users/dev/Developer/Project-Work')}\n/Users/dev/.claude/projects\n`
         : cmd === 'ps'
         ? alive
         : cmd === 'uuidgen'
         ? 'NEW-SID\n'
         : cmd === 'osascript'
-        ? (e.argv[2]?.includes('select tab') ? selected : 'tab-1\n')
+        ? (e.argv[2]?.includes('select tab') ? selected : e.argv[2]?.includes('working directory is') ? focused : 'tab-1\n')
         : cmd === 'git'
           ? (branchName !== '' ? `${branchName}\n` : arg === '-C' && e.argv[2]?.endsWith('/core/lib') ? '1-open-one\nmain\n' : 'main\n')
         : cmd === 'find' && arg === '/Users/dev/.claude/projects'
@@ -180,7 +180,7 @@ const boot = async ($: any, on: any, cwd = FIXTURE_ROOT, issues: readonly object
                 : e.argv.at(-1)?.startsWith('todos')
                   ? todos.map(t => JSON.stringify(t)).join('\n')
                   : '[]'
-    const failing = (todosFail && e.argv[e.argv.length - 1]?.startsWith('todos')) || (launchFails && cmd === 'osascript' && e.argv[2]?.includes('new window')) || (issuesFail && e.argv[e.argv.length - 1]?.startsWith('issues')) || (psFail && cmd === 'ps')
+    const failing = (todosFail && e.argv[e.argv.length - 1]?.startsWith('todos')) || (launchFails && cmd === 'osascript' && e.argv[2]?.includes('new window')) || (issuesFail && e.argv[e.argv.length - 1]?.startsWith('issues')) || (psFail && cmd === 'ps') || (authFail && e.argv[1] === 'auth')
 
     return { value: { exitCode: failing ? 1 : 0, stdout, stderr: failing ? (issuesFail ? 'boom\u001b[2J\u0007' : 'todos boom') : '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
@@ -258,7 +258,7 @@ test('the date chips narrow the cards by last update and all brings them back', 
   expect(await ui.find({ type: 'Text', text: /fresh one/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /open one/ })).toBeUndefined()
   expect(await ui.findAll({ type: 'Text', text: /\[all·1\]/ })).toHaveLength(2)
-  expect(await ui.findAll({ type: 'Text', text: /^\+1 more$/ })).toHaveLength(2)
+  expect(await ui.findAll({ type: 'Text', text: /^\+1 more$/ })).toHaveLength(3)
   expect(await ui.findAll({ type: 'Text', text: /^\+4 more$/ })).toHaveLength(1)
 
   await $.ui.press({ plugin: 'wip-wall', key: 'date:menu' })
@@ -440,8 +440,13 @@ test('the session showing the pane gives the pane back when it ends, but not on 
 test('the Sort filter row switches between status and latest and is remembered', async ($, on) => {
   const ui = await boot($, on)
   expect(await ui.find({ type: 'Text', text: /^Sort +:$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '[latest]' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '[default]' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '+1 more' })).toBeDefined()
+  expect(await ui.find({ key: 'sort:latest' })).toBeUndefined()
+  await $.ui.press({ plugin: 'wip-wall', key: 'sort:menu' })
+  expect(await ui.find({ type: 'Text', text: '+1 more' })).toBeUndefined()
   await $.ui.press({ plugin: 'wip-wall', key: 'sort:latest' })
+  await $.ui.press({ plugin: 'wip-wall', key: 'sort:menu' })
   await $.ui.press({ plugin: 'wip-wall', key: 'sort:status' })
   expect(storedValues.filter(e => e.key === 'ui:latest').map(e => e.value)).toEqual([true, false])
   expect(await ui.find({ type: 'Text', text: '[s]' })).toBeUndefined()
@@ -740,7 +745,7 @@ test('[c] draws each card as one row that still opens, links and hides, and is r
   expect(await ui.find({ key: 'hide:acme/core/lib#1' })).toBeDefined()
 
   await $.ui.press({ plugin: 'wip-wall', key: 'open:acme/core/lib#1:0' })
-  expect(await places(ui)).toEqual(['[window]', '[tab]', '[split]', '[here]'])
+  expect(await places(ui)).toEqual(['[here]', '[split]', '[tab]', '[window]'])
   await ui.unmount()
 })
 
@@ -781,7 +786,7 @@ test('compact rows keep who asked for a review, keep its review status, tint the
     expect(await ui.find({ type: 'Text', text: /^#50 / })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /look here/ })).toBeUndefined()
     await $.ui.press({ plugin: 'wip-wall', key: 'open:@acme-team/web#50:0' })
-    expect(await places(ui)).toEqual(['[window]', '[tab]', '[split]', '[here]'])
+    expect(await places(ui)).toEqual(['[here]', '[split]', '[tab]', '[window]'])
     await ui.unmount()
   } finally {
     reviewNodes = []
@@ -1072,6 +1077,91 @@ test('a session outside the clone root does not open the pane or poll GitLab, bu
   await ui.unmount()
 })
 
+const filtersShown = async (ui: any) => (await ui.find({ type: 'Text', text: /Filters/ })) !== undefined
+const reachedGitlab = () => ran.some(argv => argv[1] === 'api' || (argv[0] === 'find' && argv[1] === FIXTURE_ROOT))
+
+test('with no clone root set the pane stays closed, then /wip-wall draws only the checklist: no filters, no done, no fetch', async ($, on) => {
+  noRoot = true
+  try {
+    const ui = await boot($, on, FIXTURE_ROOT, ISSUES, null)
+    expect(opened).toEqual([])
+    expect(reachedGitlab()).toBe(false)
+    await $.command.run({ command: 'wip-wall', args: '', ...TYPED_RUN })
+    await settle()
+    expect(opened).toContain('wip-wall')
+    expect(await ui.find({ type: 'Text', text: /not set: run \/wip-wall setup <folder>/ })).toBeDefined()
+    expect(await filtersShown(ui)).toBe(false)
+    expect(await ui.find({ key: 'setup:close' })).toBeUndefined()
+    expect(await ui.find({ key: 'compact:toggle' })).toBeUndefined()
+    expect(reachedGitlab()).toBe(false)
+    await ui.unmount()
+  } finally {
+    noRoot = false
+  }
+})
+
+test('a failed GitLab login blocks the pane the same way', async ($, on) => {
+  authFail = true
+  try {
+    const ui = await boot($, on, FIXTURE_ROOT, ISSUES, '')
+    await settle()
+    expect(await filtersShown(ui)).toBe(false)
+    expect(await ui.find({ type: 'Text', text: /run glab auth login --hostname/ })).toBeDefined()
+    expect(reachedGitlab()).toBe(false)
+    await ui.unmount()
+  } finally {
+    authFail = false
+  }
+})
+
+test('the refresh and liveness timers do nothing while the gate is blocked', async ($, on) => {
+  noRoot = true
+  try {
+    panes = [{ id: 'wip-wall' }]
+    const ui = await boot($, on, FIXTURE_ROOT, ISSUES, '')
+    await settle()
+    ran.length = 0
+    await tick()
+    await tick()
+    expect(reachedGitlab()).toBe(false)
+    await ui.unmount()
+  } finally {
+    noRoot = false
+    panes = []
+  }
+})
+
+test('/wip-wall setup <folder> from a blocked pane saves it, passes the gate and loads the board', async ($, on) => {
+  noRoot = true
+  try {
+    const ui = await boot($, on, FIXTURE_ROOT, ISSUES, '')
+    await settle()
+    expect(await filtersShown(ui)).toBe(false)
+    await $.command.run({ command: 'wip-wall', args: `setup ${FIXTURE_ROOT}`, ...TYPED_RUN })
+    await settle()
+    expect(storedValues.filter(e => e.key === 'ui:root').map(e => e.value)).toEqual([FIXTURE_ROOT])
+    expect(await filtersShown(ui)).toBe(true)
+    expect(await ui.find({ key: 'setup:close' })).toBeDefined()
+    expect(ran.some(argv => argv[1] === 'api')).toBe(true)
+    await ui.unmount()
+  } finally {
+    noRoot = false
+  }
+})
+
+test('/wip-wall mock still shows cards while the gate is blocked', async ($, on) => {
+  noRoot = true
+  try {
+    const ui = await boot($, on, FIXTURE_ROOT, ISSUES, 'mock')
+    await settle()
+    expect(await filtersShown(ui)).toBe(true)
+    expect(reachedGitlab()).toBe(false)
+    await ui.unmount()
+  } finally {
+    noRoot = false
+  }
+})
+
 test('after /clear a pane opened by /wip-wall outside the clone root comes back and polls again', async ($, on) => {
   panes = [{ id: 'wip-wall' }]
   try {
@@ -1137,7 +1227,7 @@ test('pressing a card offers where to open it on the card, and the script gets t
   const ui = await boot($, on)
   await $.ui.press({ plugin: 'wip-wall', key: 'open:acme-team/web#3:0' })
 
-  expect(await places(ui)).toEqual(['[window]', '[tab]', '[split]', '[here]'])
+  expect(await places(ui)).toEqual(['[here]', '[split]', '[tab]', '[window]'])
   expect((await ui.find({ type: 'Text', text: '[here]' }))?.props.bold).toBeUndefined()
   await $.ui.press({ plugin: 'wip-wall', key: 'choose:acme-team/web#3:here' })
   expect(filled).toEqual([])
@@ -1227,13 +1317,15 @@ test('split opens the card beside this terminal in the front tab and remembers t
   await ui.unmount()
 })
 
-test('the last choice comes first', async ($, on) => {
+test('the last choice is bold and the order never changes', async ($, on) => {
   hides = { 'ui:openIn': 'tab' as string }
   try {
     const ui = await boot($, on)
     await $.ui.press({ plugin: 'wip-wall', key: 'open:acme-team/web#3:0' })
 
-    expect(await places(ui)).toEqual(['[tab]', '[window]', '[split]', '[here]'])
+    expect(await places(ui)).toEqual(['[here]', '[split]', '[tab]', '[window]'])
+    expect((await ui.find({ type: 'Text', text: '[tab]' }))?.props.bold).toBe(true)
+    expect((await ui.find({ type: 'Text', text: '[window]' }))?.props.bold).toBe(false)
     await ui.unmount()
   } finally {
     hides = {}
@@ -1244,7 +1336,7 @@ test('inside the card\'s clone, here puts the card url in this prompt and opens 
   const ui = await boot($, on, '/Users/dev/Developer/Project-Work/PROJ-X/web/src')
   await $.ui.press({ plugin: 'wip-wall', key: 'open:acme-team/web#3:0' })
 
-  expect(await places(ui)).toEqual(['[window]', '[tab]', '[split]', '[here]'])
+  expect(await places(ui)).toEqual(['[here]', '[split]', '[tab]', '[window]'])
   await $.ui.press({ plugin: 'wip-wall', key: 'choose:acme-team/web#3:here' })
   expect(filled).toEqual([{ text: 'https://x/u3', mode: 'append' }])
   expect(launches()).toHaveLength(0)
@@ -1473,6 +1565,76 @@ test('pressing a card whose Claude still runs brings its tab forward and opens n
   }
 })
 
+const liveCard = `Mon Oct  5 09:15:08 2026\t${JSON.stringify({ pid: 4242, sessionId: 's1', cwd: '/Users/dev/Developer/Project-Work/core/lib', procStart: 'Mon Oct 5 09:15:08 2026' })}`
+
+test('a running card whose tab is gone is found by its folder and focused', async ($, on) => {
+  liveFiles = liveCard
+  focused = 'ok\n'
+  try {
+    const ui = await boot($, on)
+    await $.ui.press({ plugin: 'wip-wall', key: 'open:acme/core/lib#1:0' })
+
+    expect(ran.some(a => a[0] === 'osascript' && a[2]?.includes('working directory is') && a[a.length - 1] === '/Users/dev/Developer/Project-Work/core/lib')).toBe(true)
+    expect(toasts.some(t => /Claude runs/.test(t))).toBe(false)
+    expect(launches()).toHaveLength(0)
+    await ui.unmount()
+  } finally {
+    liveFiles = ''
+    focused = 'gone\n'
+  }
+})
+
+test('a running card that Ghostty cannot find says which pid runs it, and several matches are not guessed', async ($, on) => {
+  liveFiles = liveCard
+  try {
+    const ui = await boot($, on)
+    await $.ui.press({ plugin: 'wip-wall', key: 'open:acme/core/lib#1:0' })
+    expect(toasts.some(t => /pid 4242.*does not list/.test(t))).toBe(true)
+    toasts.length = 0
+    focused = 'many\n'
+    await $.ui.press({ plugin: 'wip-wall', key: 'open:acme/core/lib#1:0' })
+    expect(toasts.some(t => /pid 4242.*several Ghostty terminals/.test(t))).toBe(true)
+    expect(launches()).toHaveLength(0)
+    await ui.unmount()
+  } finally {
+    liveFiles = ''
+    focused = 'gone\n'
+  }
+})
+
+test('a running card without a local clone still brings its tab forward', async ($, on) => {
+  alive = 'claude --resume s1\n'
+  selected = 'ok\n'
+  remotes = {}
+  try {
+    const ui = await boot($, on)
+    await $.ui.press({ plugin: 'wip-wall', key: 'open:acme/core/lib#1:0' })
+
+    expect(ran.some(a => a[0] === 'osascript' && a[2]?.includes('select tab'))).toBe(true)
+    expect(toasts.some(t => /No local clone/.test(t))).toBe(false)
+    await ui.unmount()
+  } finally {
+    alive = ''
+    selected = 'gone\n'
+    remotes = REMOTE_OF
+  }
+})
+
+test('pressing a card with a saved session while ps fails toasts and opens nothing', async ($, on) => {
+  psFail = true
+  try {
+    const ui = await boot($, on)
+    await $.ui.press({ plugin: 'wip-wall', key: 'open:acme/core/lib#1:0' })
+
+    expect(toasts.some(t => /Cannot check which Claude sessions run/.test(t))).toBe(true)
+    expect(launches()).toHaveLength(0)
+    expect(await ui.find({ key: 'choose:acme/core/lib#1:window' })).toBeUndefined()
+    await ui.unmount()
+  } finally {
+    psFail = false
+  }
+})
+
 test('pressing a card whose Claude exited opens a new session with /resume of the old one waiting, even if its tab is still there', async ($, on) => {
   selected = 'ok\n'
   try {
@@ -1644,14 +1806,13 @@ const settle = async () => {
 }
 const setupRows = async (ui: any) => (await ui.findAll({ type: 'Text', text: /^(glab|GitLab login|Ghostty|Ghostty control|Clone folder) {2}$/ })).length
 
-test('/wip-wall setup draws the checklist and its clone folders; done and a plain /wip-wall close it', async ($, on) => {
+test('/wip-wall setup draws the checklist and names the folder command; done and a plain /wip-wall close it', async ($, on) => {
   const ui = await boot($, on, FIXTURE_ROOT, ISSUES, 'setup')
   await settle()
 
   expect(await setupRows(ui)).toBe(5)
   expect(await ui.find({ type: 'Text', text: /2 clones matched/ })).toBeDefined()
-  expect(await ui.find({ key: 'setup:root:0' })).toBeDefined()
-  expect(await ui.find({ key: 'setup:root:1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /clone folder: \/wip-wall setup <folder>/ })).toBeDefined()
 
   await $.ui.press({ plugin: 'wip-wall', key: 'setup:close' })
   expect(await setupRows(ui)).toBe(0)
@@ -1682,20 +1843,20 @@ test('/wip-wall setup <folder> saves an absolute folder, scans it, and refuses a
   }
 })
 
-test('pressing a clone folder saves it and rescans that folder', async ($, on) => {
+test('/wip-wall setup host saves a bare host, strips a url, refuses a path, and the checklist names the command', async ($, on) => {
   const ui = await boot($, on, FIXTURE_ROOT, ISSUES, 'setup')
   try {
     await settle()
-    expect(ran.some(a => a[0] === 'find' && a[1] === '/Users/dev/Developer')).toBe(false)
+    expect(await ui.find({ type: 'Text', text: /setup host <host>/ })).toBeDefined()
 
-    await $.ui.press({ plugin: 'wip-wall', key: 'setup:root:1' })
+    await $.command.run({ command: 'wip-wall', args: 'setup host https://git.corp.dev/', ...TYPED_RUN })
     await settle()
+    expect(storedValues.filter(e => e.key === 'ui:host').map(e => e.value)).toEqual(['git.corp.dev'])
 
-    expect(storedValues.filter(e => e.key === 'ui:root').map(e => e.value)).toEqual(['/Users/dev/Developer'])
-    expect(ran.some(a => a[0] === 'find' && a[1] === '/Users/dev/Developer')).toBe(true)
+    await $.command.run({ command: 'wip-wall', args: 'setup host git.corp.dev/group', ...TYPED_RUN })
+    expect(storedValues.filter(e => e.key === 'ui:host').map(e => e.value)).toEqual(['git.corp.dev'])
   } finally {
-    await $.command.run({ command: 'wip-wall', args: `setup ${FIXTURE_ROOT}`, ...TYPED_RUN })
-    await settle()
     await ui.unmount()
   }
 })
+

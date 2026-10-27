@@ -5,7 +5,7 @@ import type { Card, Mention, Setup } from '../types'
 import { MOCK, MOCK_HERE, MOCK_LIVE, MOCK_LOCAL, MOCK_MENTIONS, MOCK_RESUMABLE, MOCK_REVIEWS } from './mock'
 import { ageOf, dirOf, dirsOf, isWebUrl, paneOf, reviewsOf, staleHides, titleOf, toCards } from './board'
 import type { Orders } from './board'
-import { boardOf, fetchBoard, messageOf, saveRoot, settingsOf, setupOf } from './gitlab'
+import { boardOf, fetchBoard, gateOf, messageOf, saveHost, saveRoot, settingsOf, setupOf } from './gitlab'
 import { cardStatus, claimCard, focusRunning, isCardWindow, openCardSession, pruneCardSessions, releaseBranchCard } from './sessions'
 import type { Place } from './sessions'
 import { THEMES } from './themes'
@@ -37,6 +37,7 @@ const groupMenu = atom({ plugin: 'wip-wall', key: 'groupMenu' } as const, false)
 const repoMenu = atom({ plugin: 'wip-wall', key: 'repoMenu' } as const, false)
 const statusMenu = atom({ plugin: 'wip-wall', key: 'statusMenu' } as const, false)
 const dateMenu = atom({ plugin: 'wip-wall', key: 'dateMenu' } as const, false)
+const sortMenu = atom({ plugin: 'wip-wall', key: 'sortMenu' } as const, false)
 const boards = atom({ plugin: 'wip-wall', key: 'boards' } as const, {})
 const datePick = atom({ plugin: 'wip-wall', key: 'date' } as const, 'month')
 const statusPick = atom({ plugin: 'wip-wall', key: 'status' } as const, 'all')
@@ -52,8 +53,9 @@ const openIn = atom({ plugin: 'wip-wall', key: 'openIn' } as const, 'window')
 const here = atom({ plugin: 'wip-wall', key: 'here' } as const, '')
 const choosing = atom({ plugin: 'wip-wall', key: 'choosing' } as const, '')
 const sessionCwd = atom({ plugin: 'wip-wall', key: 'cwd' } as const, '')
-const NO_SETUP: Setup = { checks: [], roots: [], root: '' }
+const NO_SETUP: Setup = { checks: [] }
 const setup = atom({ plugin: 'wip-wall', key: 'setup' } as const, NO_SETUP)
+const gate = atom({ plugin: 'wip-wall', key: 'gate' } as const, 'checking' as 'checking' | 'blocked' | 'ready')
 
 // ponytail: find stops at depth 4, so a clone nested deeper than root/group/sub/repo is not found; raise -maxdepth if subgroups go deeper
 const scanDirs = async ($: Dollar) => {
@@ -93,6 +95,7 @@ const retitle = async ($: Dollar) => {
 }
 
 let mocking = false
+let ready = false
 
 const MOCK_NOTE = 'Mock cards are not real: run /wip-wall to restore'
 
@@ -158,7 +161,7 @@ const refresh = ($: Dollar): Promise<void> => (refreshing ??= reload($).finally(
 }))
 
 const reload = async ($: Dollar) => {
-  if (mocking) return
+  if (mocking || !ready) return
   try {
     const { issues, mrs, reviews: asked, mentions: pinged, failures } = await fetchBoard($)
     const list = toCards(issues, mrs)
@@ -281,10 +284,10 @@ const open = async ($: Dollar, card: Card) => {
   opening.add(card.key)
   try {
     const { root } = await settingsOf($)
-    if (!dirOf(await read($, dirs), card)) return $.ui.toast(`No local clone of ${card.repo} under ${root}`)
-    if (!isWebUrl(card.url)) return $.ui.toast('Refusing to open a link that is not http or https')
     if (card.key === (await read($, here))) return $.ui.toast('This card is open in this session')
     if (await focusRunning($, card)) return
+    if (!dirOf(await read($, dirs), card)) return $.ui.toast(`No local clone of ${card.repo} under ${root}`)
+    if (!isWebUrl(card.url)) return $.ui.toast('Refusing to open a link that is not http or https')
     await update($, choosing, () => card.key)
   } finally {
     opening.delete(card.key)
@@ -394,16 +397,27 @@ const loadPrefs = async ($: Dollar) => {
 
 let setupRun = 0
 
+const checkGate = async ($: Dollar, show = false): Promise<boolean> => {
+  ready = false
+  const checked = await gateOf($)
+  ready = checked.ready
+  await update($, gate, () => (checked.ready ? 'ready' : 'blocked'))
+  if (!checked.ready || show) await update($, setup, () => checked.setup)
+
+  return checked.ready
+}
+
+const fillSetup = ($: Dollar, run: number) =>
+  void setupOf($)
+    .catch(() => NO_SETUP)
+    .then(async checked => {
+      if (run === setupRun && !mocking && checked.checks.length > 0) await update($, setup, () => checked)
+    })
+    .catch(() => undefined)
+
 const refreshFresh = async ($: Dollar) => {
   await refreshing
   await refresh($)
-}
-
-const setRoot = async ($: Dollar, path: string) => {
-  const rejected = await saveRoot($, path)
-  if (rejected !== '') return $.ui.toast(rejected)
-  await update($, setup, s => ({ ...s, root: path, checks: s.checks.map(c => (c.clones ? { ...c, ok: true, note: path } : c)) }))
-  void refreshFresh($).catch(() => undefined)
 }
 
 const cycleTheme = async ($: Dollar) => {
@@ -443,12 +457,12 @@ const poll = ($: Dollar) => {
 
         return
       }
-      if (!(await paneOpen($).catch(() => false))) return
+      if (!ready || !(await paneOpen($).catch(() => false))) return
       await refresh($)
       skip = Math.min(unchanged, MAX_BACKOFF)
     }),
     $.clock.every(LIVE_MS, async () => {
-      if (!(await paneOpen($).catch(() => false))) return
+      if (!ready || !(await paneOpen($).catch(() => false))) return
       await claimPane($)
       await syncLive($)
     }),
@@ -484,7 +498,7 @@ const start = async ($: Dollar, paneShown = false) => {
   void claimBranchCard($).catch(() => undefined)
   const shown = paneShown || (await paneOpen($).catch(() => false))
   if (!shown && (await isCardWindow($).catch(() => false))) return
-  if (!shown && !(await insideRoot($).catch(() => true))) return
+  if (!shown && !(await insideRoot($).catch(() => false))) return
   if (!shown && (await otherPane($).catch(() => false))) return
   void claimPane($).catch(() => undefined)
   const kept = carried
@@ -505,6 +519,11 @@ const start = async ($: Dollar, paneShown = false) => {
     })
     .catch(() => false)
     .then(async picked => {
+      if (!(await checkGate($))) {
+        fillSetup($, setupRun)
+
+        return
+      }
       await refresh($)
       await syncLive($)
       if (!kept && !picked && before === `${await read($, group)}/${await read($, tab)}`) await selectByCwd($)
@@ -556,7 +575,7 @@ export const register: Register = on => {
     const leaving = mocking
     const typed = e.args.trim()
     mocking = typed === 'mock'
-    const setting = typed === 'setup' || typed.startsWith('setup ')
+    const setting = /^setup(\s|$)/.test(typed)
     const run = (setupRun += 1)
     if (!setting) await update($, setup, () => NO_SETUP)
     if (leaving && !mocking) {
@@ -573,16 +592,21 @@ export const register: Register = on => {
     let saved = false
     if (setting) {
       const folder = typed.slice('setup'.length).trim()
-      if (folder !== '') {
+      if (/^host(\s|$)/.test(folder)) {
+        rejected = await saveHost($, folder.slice('host'.length))
+        saved = rejected === ''
+      } else if (folder !== '') {
         rejected = await saveRoot($, folder)
         saved = rejected === ''
       }
-      void setupOf($)
-        .catch(() => NO_SETUP)
-        .then(async checked => {
-          if (run === setupRun && !mocking) await update($, setup, () => checked)
-        })
-        .catch(() => undefined)
+    }
+    const passed = await checkGate($, setting)
+    if (setting || !passed) fillSetup($, run)
+    if (!passed) {
+      await $.ui.open({ id: PANE, title: await paneTitle($) })
+      await claimPane($)
+
+      return { text: rejected !== '' ? `Not saved: ${rejected}` : 'WIP-WALL needs setup: see the pane' }
     }
     if (!polling) await Promise.all([syncHidden($), loadPrefs($), $.session.cwd().then(cwd => update($, sessionCwd, () => cwd))])
     await (saved ? refreshFresh($) : refresh($))
@@ -591,7 +615,7 @@ export const register: Register = on => {
     await syncLive($)
     poll($)
 
-    return { text: rejected !== '' ? `Folder not saved: ${rejected}` : setting ? 'WIP-WALL setup checked: see the pane' : 'WIP-WALL refreshed' }
+    return { text: rejected !== '' ? `Not saved: ${rejected}` : setting ? 'WIP-WALL setup checked: see the pane' : 'WIP-WALL refreshed' }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -630,7 +654,9 @@ export const register: Register = on => {
       .sort((a, b) => b.length - a.length)[0]
     const statusOpen = await read($, statusMenu)
     const dateOpen = await read($, dateMenu)
+    const sortOpen = await read($, sortMenu)
     const setupNow = await read($, setup)
+    const gateNow = await read($, gate)
     const view = paneOf(
       {
         cards: saved?.cards ?? cardsNow,
@@ -691,6 +717,15 @@ export const register: Register = on => {
         },
       },
     }
+    if (gateNow === 'blocked' && !mocking)
+      return (
+        <Box flexDirection="column" minHeight={e.props.placement === 'dock' ? e.props.scroll?.bodyRows : undefined}>
+          <Box justifyContent="center" marginBottom={1}>
+            <Text bold color={TEXT}><Text color={colorOf('doing')}>WIP</Text>-WALL</Text>
+          </Box>
+          {setupView(look, setupNow, 0, {})}
+        </Box>
+      )
     const grid = (list: Card[], prefix: string) =>
       compactOn
         ? list.map(card => cardRow(look, card))
@@ -731,7 +766,6 @@ export const register: Register = on => {
         )}
         {setupNow.checks.length > 0 &&
           setupView(look, setupNow, new Set(Object.values(clones)).size, {
-            root: path => setRoot($, path),
             close: () => {
               setupRun += 1
 
@@ -813,10 +847,10 @@ export const register: Register = on => {
           look,
           'Sort',
           'sort',
-          true,
-          () => undefined,
+          sortOpen,
+          v => update($, sortMenu, () => v),
           [
-            { id: 'status', label: 'status', color: MUTED, on: !latestOn, press: () => pickLatest($, false) },
+            { id: 'status', label: 'default', color: MUTED, on: !latestOn, press: () => pickLatest($, false) },
             { id: 'latest', label: 'latest', color: MUTED, on: latestOn, press: () => pickLatest($, true) },
           ],
           true,
@@ -824,8 +858,10 @@ export const register: Register = on => {
         {sections.length === 0 && heard.length === 0 && working.length === 0 && rule(look, 'Cards')}
         {problem !== '' && (
           <Box columnGap={1}>
-            <Box flexShrink={1}>
-              <Text color={BAD} wrap="truncate-end">{problem}</Text>
+            <Box flexShrink={1} flexDirection="column">
+              {problem.split(' · ').map((part, n) => (
+                <Text key={`problem:${n}`} color={BAD}>{part}</Text>
+              ))}
             </Box>
             <Button key="retry" plain onPress={() => refresh($)}>
               <Text bold color={TEXT}>[retry]</Text>

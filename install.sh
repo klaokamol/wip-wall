@@ -11,7 +11,7 @@ case "${1:-install}" in
     [ -d /Applications/Ghostty.app ] || echo "warning: Ghostty.app not found" >&2
     claude plugin marketplace add "$here"
     claude plugin install "wip-wall@$market"
-    echo "installed; run /wip-wall in claude"
+    echo "installed; restart claude (or /reload-plugins), then run /wip-wall setup"
     ;;
   uninstall)
     claude plugin uninstall "wip-wall@$market"

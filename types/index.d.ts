@@ -34,7 +34,7 @@ export type Mention = {
 
 export type SetupCheck = { label: string; ok: boolean; note: string; clones?: true }
 
-export type Setup = { checks: SetupCheck[]; roots: string[]; root: string }
+export type Setup = { checks: SetupCheck[] }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -55,6 +55,7 @@ declare module 'claude-code' {
       repoMenu: boolean
       statusMenu: boolean
       dateMenu: boolean
+      sortMenu: boolean
       boards: Record<string, string[]>
       status: string
       date: string
@@ -72,6 +73,7 @@ declare module 'claude-code' {
       choosing: string
       cwd: string
       setup: Setup
+      gate: 'checking' | 'blocked' | 'ready'
     }
   }
 }

@@ -36,35 +36,41 @@ Every card is an issue coloured by its `Status::` label, with its merge request,
 | **Requests** | Merge requests waiting for your review: unreviewed, review started or unapproved. |
 | **MR state** | Pipeline, approvals, conflicts, open threads, stale and blocked, as one coloured line per merge request. |
 | **Branches** | `↓` marks an issue that already has a local branch named after it. |
-| **Filters** | Project, repo, status, last update, and a `Sort` row: board status or latest first. |
+| **Filters** | Project, repo, status, last update, and a `Sort` row: `default` order (by status) or `latest` first. |
 | **Dismiss** | `✕` hides a card until it next changes. |
 | **Themes** | Six themes on `[t]`, each checked for readable contrast. |
 
-## Install
+## Setup
 
-Requires macOS with [Ghostty](https://ghostty.org), [`glab`](https://gitlab.com/gitlab-org/cli) logged in (`glab auth login`) and your project clones in one folder.
+Do these in order.
 
-```sh
-./install.sh            # add the marketplace and install the mod
-./install.sh uninstall  # remove both
-```
+1. **Check the requirements.**
+   - macOS with [Ghostty](https://ghostty.org) (other terminals do not work: cards open through Ghostty)
+   - Claude Code with mod support (tested on 2.1.311)
+   - [`glab`](https://gitlab.com/gitlab-org/cli): `brew install glab`
+   - your project clones under one folder (see Where your clones live)
+2. **Log in to GitLab.** `glab auth login`. For a self-hosted GitLab, log in to that host.
+3. **Get the code and install the mod.**
+   ```sh
+   git clone https://github.com/klaokamol/wip-wall.git
+   cd wip-wall
+   ./install.sh
+   ```
+   By hand instead of `install.sh`, from inside the clone:
+   ```sh
+   claude plugin marketplace add "$PWD"
+   claude plugin install wip-wall@wip-wall-local
+   ```
+4. **Restart `claude`** (or run `/reload-plugins`). The pane does not open by itself until a clone folder is set (step 7); run `/wip-wall` to open it. After that it opens only in sessions started inside that folder, and `/wip-wall` opens it anywhere. Until `glab`, GitLab login and the clone folder all pass, the pane shows only the setup checklist: no filters, no cards, and nothing is fetched from GitLab or scanned on disk. These three are checked again on every `/wip-wall`.
+5. **Run `/wip-wall setup`.** The pane shows a checklist: `glab` found, GitLab login, Ghostty installed, Ghostty control allowed, and your clone folder with how many clones it matched. Each line that fails says what to run. If `GitLab login` says `no host`, run `/wip-wall setup host <host>` (a bare host such as `gitlab.example.com`), which saves it and checks again.
+6. **Allow Ghostty control.** If Ghostty is running during step 5, macOS may ask whether your terminal may control it: allow it. If Ghostty is not running, macOS asks on the first card you open.
+7. **Set the clone folder.** Run `/wip-wall setup ~/path/to/clones` (the folder that holds your work clones; the choice is remembered). `Clone folder` turns ✓ and shows how many clones matched. Pick the narrowest folder that holds them: a wider one scans more and opens the pane in sessions that have nothing to do with GitLab.
+8. **Press `[done]`, then run `/wip-wall`.** `[done]` appears once the three checks pass. Your real issues, merge requests and mentions load (running `/wip-wall setup <folder>` that fixes the last failing check loads them straight away). Ghostty rows only warn: they never block the pane.
+9. **Press a card** to open Claude in its clone (see Opening a card).
 
-Or by hand, with the repository URL:
+`/wip-wall mock` shows sample cards instead and fetches nothing, so you can look around once the mod is installed (after step 4).
 
-```sh
-claude plugin marketplace add https://github.com/klaokamol/wip-wall.git
-claude plugin install wip-wall@wip-wall-local
-```
-
-Update with `claude plugin update wip-wall@wip-wall-local`, then `/reload-plugins`. To try it for one session without installing: `claude --plugin-dir /path/to/wip-wall`.
-
-## First run
-
-1. Start `claude` and run `/wip-wall setup`. The pane shows a checklist: `glab` found, GitLab login, Ghostty installed, Ghostty control allowed, and your clone folder with how many clones it matched. Each line that fails says what to run.
-2. If the clone folder is wrong, press one of the folders the pane lists, or run `/wip-wall setup ~/path/to/clones`. The choice is remembered.
-3. Press `[done]`, then `/wip-wall`: your real issues, merge requests and mentions load. `/wip-wall mock` shows sample cards instead and fetches nothing.
-
-If Ghostty is running when you run setup, macOS may ask whether your terminal may control it; allow it. If Ghostty is not running, macOS asks on the first card you open.
+Later: `./install.sh uninstall` removes the mod. Update with `claude plugin update wip-wall@wip-wall-local`, then `/reload-plugins`. To try it for one session without installing: `claude --plugin-dir /path/to/wip-wall`.
 
 ## Using the pane
 
@@ -83,7 +89,7 @@ open: [window] [tab] [split] [here] [×]
 | `split` | A split to the right of the focused terminal, in the front window's selected tab. |
 | `here` | Only when this session is already in that clone: the card's link goes into your prompt (or `/resume <id>` when the card has a saved session). |
 
-The last place you chose is drawn first. A new Claude starts with the card's link typed into the prompt and not submitted; you press Enter yourself.
+The places always read `here`, `split`, `tab`, `window`; the last one you chose is drawn bold. A new Claude starts with the card's link typed into the prompt and not submitted; you press Enter yourself.
 
 ### Markers
 
@@ -119,11 +125,12 @@ Working, Mentions, Requests and every project section fold with their `[hide]` /
 
 ## Where your clones live
 
-WIP-WALL searches one folder, four levels deep, for git clones and matches each clone's `origin` remote to a GitLab project. It uses the first of these that applies:
+WIP-WALL searches one folder for git clones up to three folders below it (`root/group/subgroup/repo`; `node_modules` is skipped) and matches each clone's `origin` remote to a GitLab project. It uses the first of these that is set:
 
 1. `$WIP_WALL_ROOT`
-2. the folder you chose with `/wip-wall setup`
-3. the first that exists of `~/Developer/Project-Work`, `~/Developer`, `~/Projects`, `~/src`, `~/code`
+2. the folder you chose with `/wip-wall setup <folder>`
+
+There is no default: until one is set, the pane says `clone root or sessions folder unknown` and the checklist shows `Clone folder` as ✗.
 
 Folder names do not matter: a clone is found by its remote url, so a project whose clone is missing, or whose remote could not be read, gets a "No local clone" toast instead of opening in the wrong repository.
 
@@ -132,8 +139,8 @@ Folder names do not matter: a clone is found by its remote url, so a project who
 | Variable | Default |
 | --- | --- |
 | `WIP_WALL_GLAB` | `glab` on `PATH` (also looks in `/opt/homebrew/bin` and `/usr/local/bin`) |
-| `WIP_WALL_HOST` | `GITLAB_HOST`, then `glab config get host` |
-| `WIP_WALL_ROOT` | the folder chosen with `/wip-wall setup`, else the first existing folder listed above |
+| `WIP_WALL_HOST` | the host chosen with `/wip-wall setup host <host>`, then `GITLAB_HOST`, then `glab config get host` |
+| `WIP_WALL_ROOT` | the folder chosen with `/wip-wall setup <folder>`; no other default |
 
 `WIP_WALL_ROOT` wins over a chosen folder, which suits a shell profile.
 
@@ -154,7 +161,7 @@ WIP-WALL is a mod: it runs inside your Claude Code session with your own rights 
 
 **Claude sessions it starts.** Pressing a card runs `claude --session-id <id>` in the card's clone, with the card's url typed into the prompt (or `/resume <old id>` when the card already had a session). You press Enter yourself; nothing is submitted for you. The new session has your normal Claude Code permissions. For a mention, the typed url comes from whoever mentioned you, so treat it as you would any link a colleague sends before pressing Enter.
 
-**What it stores.** Claude Code keeps, across sessions, which cards you dismissed, which Claude session belongs to which card, which session currently shows the pane, your pane choices (theme, where to open, folds, the legend, compact rows, sort), the clone folder you chose in setup and a cache of the last board (card titles, labels, branches) so the pane draws before the first refresh. It writes nothing else to disk and sends nothing anywhere except the GitLab requests above.
+**What it stores.** Claude Code keeps, across sessions, which cards you dismissed, which Claude session belongs to which card, which session currently shows the pane, your pane choices (theme, where to open, folds, the legend, compact rows, sort), the clone folder and GitLab host you chose in setup and a cache of the last board (card titles, labels, branches) so the pane draws before the first refresh. It writes nothing else to disk and sends nothing anywhere except the GitLab requests above.
 
 </details>
 
@@ -166,7 +173,7 @@ WIP-WALL is a mod: it runs inside your Claude Code session with your own rights 
 | What you see | Fix |
 | --- | --- |
 | `glab not found` | `brew install glab`, or set `WIP_WALL_GLAB` to its path |
-| `GitLab host unknown` | `glab auth login`, or set `WIP_WALL_HOST` |
+| `GitLab host unknown` | `glab auth login`, run `/wip-wall setup host <host>`, or set `WIP_WALL_HOST` |
 | `clone root or sessions folder unknown` | none of the default folders exist: run `/wip-wall setup ~/path/to/clones`, or set `WIP_WALL_ROOT` |
 | `No local clone of <project> under <root>` | clone the project under that root; if you moved or renamed it on GitLab, run `git remote set-url origin <new url>` in the clone |
 | Pane is blank | run `/wip-wall`; if it stays blank, run `claude --debug` and look for a `wip-wall:` line |

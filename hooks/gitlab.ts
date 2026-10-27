@@ -8,19 +8,17 @@ export type Dollar = Parameters<Hook<'session.start'>>[0]
 
 const BOARD_TTL_MS = 24 * 60 * 60 * 1000
 
-// ponytail: first existing folder of a fixed list is the clone root; several roots would need WIP_WALL_ROOT as a path list
-const ROOTS = ['Developer/Project-Work', 'Developer', 'Projects', 'src', 'code']
 const ROOT_KEY = 'ui:root'
+const HOST_KEY = 'ui:host'
+const HOST_NAME = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$/
 const HAS_CONTROL = /[\u0000-\u001f\u007f]/
-const FALLBACK_ROOT = `$(for d in ${ROOTS.map(r => `"$HOME/${r}"`).join(' ')}; do [ -d "$d" ] && { echo "$d"; break; }; done)`
-const LIST_ROOTS = `for r in ${ROOTS.join(' ')}; do [ -d "$HOME/$r" ] && echo "$HOME/$r"; done`
 const RESOLVE = 'case "$1" in "~") d=$HOME;; "~/"*) d=$HOME/${1#"~/"};; *) d=$1;; esac; [ -d "$d" ] && printf %s "$d"'
 const PROBE = 'if application "Ghostty" is running then\ntell application "Ghostty" to get name\nreturn "ok"\nend if\nreturn "idle"'
 
 const DETECT = [
   'export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"',
   'glab="${WIP_WALL_GLAB:-$(command -v glab)}"',
-  `printf '%s\\n' "$glab" "\${WIP_WALL_HOST:-\${GITLAB_HOST:-$("$glab" config get host 2>/dev/null)}}" "\${WIP_WALL_ROOT:-\${WIP_WALL_SAVED_ROOT:-${FALLBACK_ROOT}}}" "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"`,
+  `printf '%s\\n' "$glab" "\${WIP_WALL_HOST:-\${WIP_WALL_SAVED_HOST:-\${GITLAB_HOST:-$("$glab" config get host 2>/dev/null)}}}" "\${WIP_WALL_ROOT:-\${WIP_WALL_SAVED_ROOT:-}}" "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"`,
 ].join('\n')
 
 export const messageOf = (cause: unknown): string => clean(String(cause instanceof Error ? cause.message : cause))
@@ -35,8 +33,14 @@ async function savedRoot($: Dollar): Promise<string> {
   return typeof saved === 'string' && saved.startsWith('/') && !HAS_CONTROL.test(saved) ? saved : ''
 }
 
+async function savedHost($: Dollar): Promise<string> {
+  const saved = await $.store.get(HOST_KEY)
+
+  return typeof saved === 'string' && HOST_NAME.test(saved) ? saved : ''
+}
+
 async function detect($: Dollar): Promise<Settings> {
-  const ran = await $.process.run(['sh', '-c', DETECT], { env: { WIP_WALL_SAVED_ROOT: await savedRoot($) } })
+  const ran = await $.process.run(['sh', '-c', DETECT], { env: { WIP_WALL_SAVED_ROOT: await savedRoot($), WIP_WALL_SAVED_HOST: await savedHost($) } })
   const [glab = '', host = '', root = '', sessions = ''] = ran.stdout.split('\n')
 
   return { glab, host, root, sessions }
@@ -74,34 +78,59 @@ export async function saveRoot($: Dollar, folder: string): Promise<string> {
   return ''
 }
 
-export async function setupOf($: Dollar): Promise<Setup> {
+export async function saveHost($: Dollar, typed: string): Promise<string> {
+  const host = typed.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '')
+  if (!HOST_NAME.test(host)) return 'give a GitLab host such as gitlab.example.com (no path)'
+  await $.store.set(HOST_KEY, host)
+  forgetSettings()
+
+  return ''
+}
+
+async function requiredOf($: Dollar): Promise<{ glab: SetupCheck; login: SetupCheck; clone: SetupCheck }> {
   const raw = await detect($)
   const saved = await savedRoot($)
+  const chosenHost = await savedHost($)
   const hasGlab = raw.glab !== ''
   const loggedIn = hasGlab && raw.host !== '' && (await $.process.run([raw.glab, 'auth', 'status', '--hostname', raw.host])).exitCode === 0
+  const rootExists = raw.root !== '' && (await $.process.run(['test', '-d', raw.root])).exitCode === 0
+  const loginNote = raw.host === '' ? 'no host: run /wip-wall setup host <gitlab host>' : `run glab auth login --hostname ${raw.host}`
+
+  return {
+    glab: { label: 'glab', ok: hasGlab, note: hasGlab ? raw.glab : 'brew install glab, or set WIP_WALL_GLAB' },
+    login: { label: 'GitLab login', ok: loggedIn, note: loggedIn ? (chosenHost !== '' && chosenHost !== raw.host ? `${raw.host} (WIP_WALL_HOST overrides the host chosen here)` : raw.host) : hasGlab ? loginNote : 'needs glab first' },
+    clone: {
+      label: 'Clone folder',
+      ok: rootExists,
+      note: raw.root === '' ? 'not set: run /wip-wall setup <folder>' : !rootExists ? `${raw.root} is not a folder: run /wip-wall setup <folder>` : saved !== '' && saved !== raw.root ? `${raw.root} (WIP_WALL_ROOT overrides the folder chosen here)` : raw.root,
+      clones: true,
+    },
+  }
+}
+
+const cleaned = (checks: SetupCheck[]): Setup => ({ checks: checks.map(c => ({ ...c, note: clean(c.note) })) })
+
+export async function gateOf($: Dollar): Promise<{ ready: boolean; setup: Setup }> {
+  forgetSettings()
+  const { glab, login, clone } = await requiredOf($)
+
+  return { ready: glab.ok && login.ok && clone.ok, setup: cleaned([glab, login, clone]) }
+}
+
+export async function setupOf($: Dollar): Promise<Setup> {
+  const { glab, login, clone } = await requiredOf($)
   const installed = (await $.process.run(['osascript', '-e', 'id of application "Ghostty"'])).exitCode === 0
   const probe = installed ? await $.process.run(['osascript', '-e', PROBE]) : undefined
-  const rootExists = raw.root !== '' && (await $.process.run(['test', '-d', raw.root])).exitCode === 0
-  const roots = (await $.process.run(['sh', '-c', LIST_ROOTS])).stdout.split('\n').filter(line => line !== '')
-  const loginNote = raw.host === '' ? 'no host: run glab auth login, or set WIP_WALL_HOST' : `run glab auth login --hostname ${raw.host}`
-  const checks: SetupCheck[] = [
-    { label: 'glab', ok: hasGlab, note: hasGlab ? raw.glab : 'brew install glab, or set WIP_WALL_GLAB' },
-    { label: 'GitLab login', ok: loggedIn, note: loggedIn ? raw.host : hasGlab ? loginNote : 'needs glab first' },
+  const ghostty: SetupCheck[] = [
     { label: 'Ghostty', ok: installed, note: installed ? 'installed' : 'install it from ghostty.org' },
     {
       label: 'Ghostty control',
       ok: probe !== undefined && probe.exitCode === 0,
       note: probe === undefined ? 'needs Ghostty first' : probe.exitCode !== 0 ? 'allow it in System Settings, Privacy and Security, Automation' : probe.stdout.trim() === 'idle' ? 'Ghostty is not running: macOS asks on the first open' : 'allowed',
     },
-    {
-      label: 'Clone folder',
-      ok: rootExists,
-      note: raw.root === '' ? 'none of the usual folders exists: pick one below or run /wip-wall setup <folder>' : saved !== '' && saved !== raw.root ? `${raw.root} (WIP_WALL_ROOT overrides the folder chosen here)` : raw.root,
-      clones: true,
-    },
   ]
 
-  return { checks: checks.map(c => ({ ...c, note: clean(c.note) })), roots: roots.map(clean), root: clean(raw.root) }
+  return cleaned([glab, login, ...ghostty, clone])
 }
 
 async function run($: Dollar, argv: string[]): Promise<string> {
