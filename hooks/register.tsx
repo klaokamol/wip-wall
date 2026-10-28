@@ -435,7 +435,22 @@ const restoreOne = async ($: Dollar, key: string) => {
 }
 
 let polling = false
-let carried: { group: string; tab: string; date: string; status: string } | undefined
+let carried:
+  | {
+      group: string
+      tab: string
+      date: string
+      status: string
+      mentions: boolean
+      reviews: boolean
+      legend: boolean
+      compact: boolean
+      latest: boolean
+      folded: string[]
+      theme: string
+      place: string
+    }
+  | undefined
 let timers: { cancel: () => void }[] = []
 
 // ponytail: fixed wait for the new session to settle after /clear or /resume; listen for a ready event if 500 ms proves too short
@@ -508,6 +523,14 @@ const start = async ($: Dollar, paneShown = false) => {
       await update($, tab, () => kept.tab)
       await update($, datePick, () => kept.date)
       await update($, statusPick, () => kept.status)
+      await update($, mentionsOpen, () => kept.mentions)
+      await update($, reviewsOpen, () => kept.reviews)
+      await update($, legendOpen, () => kept.legend)
+      await update($, compact, () => kept.compact)
+      await update($, latest, () => kept.latest)
+      await update($, folded, () => kept.folded)
+      await update($, themeName, () => kept.theme)
+      await update($, openIn, () => kept.place)
     }
   } finally {
     carried = undefined
@@ -557,7 +580,20 @@ export const register: Register = on => {
       if (owner?.sid === (await $.session.id().catch(() => ''))) await $.store.delete('pane:owner').catch(() => undefined)
     }
     if (e.reason === 'clear' || e.reason === 'resume') {
-      const filters = { group: await read($, group), tab: await read($, tab), date: await read($, datePick), status: await read($, statusPick) }
+      const filters = {
+        group: await read($, group),
+        tab: await read($, tab),
+        date: await read($, datePick),
+        status: await read($, statusPick),
+        mentions: await read($, mentionsOpen),
+        reviews: await read($, reviewsOpen),
+        legend: await read($, legendOpen),
+        compact: await read($, compact),
+        latest: await read($, latest),
+        folded: await read($, folded),
+        theme: await read($, themeName),
+        place: await read($, openIn),
+      }
       const restart = (left: number) => $.clock.after(CLEAR_RESTART_MS, async () => {
         if (!(await paneOpen($).catch(() => false))) {
           if (left > 0) restart(left - 1)
@@ -630,18 +666,18 @@ export const register: Register = on => {
     const els = $.ui.resolve(e)
     const { Box, Text, Button } = els
     const themeNames = Object.keys(THEMES)
-    const pickedTheme = await read($, themeName)
+    const pickedTheme = carried?.theme ?? (await read($, themeName))
     const themeKey = themeNames.includes(pickedTheme) ? pickedTheme : themeNames[0]
     const theme = THEMES[themeKey as keyof typeof THEMES]
     const { muted: MUTED, faint: FAINT, text: TEXT, bad: BAD } = theme
     const colorOf = (status: string): string => colorIn(theme, status)
-    const mentionsOn = await read($, mentionsOpen)
-    const reviewsOn = await read($, reviewsOpen)
-    const legendOn = await read($, legendOpen)
-    const compactOn = await read($, compact)
-    const latestOn = await read($, latest)
+    const mentionsOn = carried?.mentions ?? (await read($, mentionsOpen))
+    const reviewsOn = carried?.reviews ?? (await read($, reviewsOpen))
+    const legendOn = carried?.legend ?? (await read($, legendOpen))
+    const compactOn = carried?.compact ?? (await read($, compact))
+    const latestOn = carried?.latest ?? (await read($, latest))
     const dismissedOn = await read($, dismissedOpen)
-    const foldedNow = await read($, folded)
+    const foldedNow = carried?.folded ?? (await read($, folded))
     const problem = await read($, error)
     const atMs = await read($, loadedAt)
     const cardsNow = await read($, cards)
@@ -654,7 +690,7 @@ export const register: Register = on => {
     const scrolling = await read($, marquee)
     const hereKey = await read($, here)
     const chosen = await read($, choosing)
-    const lastPlace = await read($, openIn)
+    const lastPlace = carried?.place ?? (await read($, openIn))
     const clones = saved?.dirs ?? (await read($, dirs))
     const cwdNow = await read($, sessionCwd)
     const cwdDir = Object.values(clones)
