@@ -20,8 +20,8 @@ case "${1:-install}" in
     ;;
   update)
     git -C "$here" pull --ff-only
-    sh "$here/install.sh" uninstall || true
-    sh "$here/install.sh" install
+    sh "$here/wip-wall.sh" uninstall || true
+    sh "$here/wip-wall.sh" install
     ;;
   *)
     echo "usage: $0 [install|update|uninstall]" >&2
