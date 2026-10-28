@@ -449,6 +449,11 @@ let carried:
       folded: string[]
       theme: string
       place: string
+      dismissed: boolean
+      hidden: Record<string, string>
+      live: string[]
+      resumable: string[]
+      here: string
     }
   | undefined
 let timers: { cancel: () => void }[] = []
@@ -531,6 +536,11 @@ const start = async ($: Dollar, paneShown = false) => {
       await update($, folded, () => kept.folded)
       await update($, themeName, () => kept.theme)
       await update($, openIn, () => kept.place)
+      await update($, dismissedOpen, () => kept.dismissed)
+      await update($, hidden, () => kept.hidden)
+      await update($, live, () => kept.live)
+      await update($, resumable, () => kept.resumable)
+      await update($, here, () => kept.here)
     }
   } finally {
     carried = undefined
@@ -593,6 +603,11 @@ export const register: Register = on => {
         folded: await read($, folded),
         theme: await read($, themeName),
         place: await read($, openIn),
+        dismissed: await read($, dismissedOpen),
+        hidden: await read($, hidden),
+        live: await read($, live),
+        resumable: await read($, resumable),
+        here: await read($, here),
       }
       const restart = (left: number) => $.clock.after(CLEAR_RESTART_MS, async () => {
         if (!(await paneOpen($).catch(() => false))) {
@@ -676,7 +691,7 @@ export const register: Register = on => {
     const legendOn = carried?.legend ?? (await read($, legendOpen))
     const compactOn = carried?.compact ?? (await read($, compact))
     const latestOn = carried?.latest ?? (await read($, latest))
-    const dismissedOn = await read($, dismissedOpen)
+    const dismissedOn = carried?.dismissed ?? (await read($, dismissedOpen))
     const foldedNow = carried?.folded ?? (await read($, folded))
     const problem = await read($, error)
     const atMs = await read($, loadedAt)
@@ -688,7 +703,7 @@ export const register: Register = on => {
     const menuOpen = await read($, groupMenu)
     const repoOpen = await read($, repoMenu)
     const scrolling = await read($, marquee)
-    const hereKey = await read($, here)
+    const hereKey = carried?.here ?? (await read($, here))
     const chosen = await read($, choosing)
     const lastPlace = carried?.place ?? (await read($, openIn))
     const clones = saved?.dirs ?? (await read($, dirs))
@@ -706,13 +721,13 @@ export const register: Register = on => {
         cards: saved?.cards ?? cardsNow,
         reviews: saved?.reviews ?? (await read($, reviews)),
         mentions: saved?.mentions ?? (await read($, mentions)),
-        hidden: await read($, hidden),
+        hidden: carried?.hidden ?? (await read($, hidden)),
         group: carried?.group ?? (await read($, group)),
         tab: carried?.tab ?? (await read($, tab)),
         date: carried?.date ?? (await read($, datePick)),
         status: carried?.status ?? (await read($, statusPick)),
         boards: saved?.boards ?? (await read($, boards)),
-        working: [...(await read($, live)), hereKey],
+        working: [...(carried?.live ?? (await read($, live))), hereKey],
         here: hereKey,
         latest: latestOn,
       },
@@ -723,8 +738,8 @@ export const register: Register = on => {
     const perRow = Math.max(1, Math.floor(cols / (CARD_WIDTH + 1)))
     const lineWidth = e.props.bodyColumns ?? 80
     const branched = saved?.local ?? (await read($, local))
-    const openKeys = await read($, live)
-    const backKeys = await read($, resumable)
+    const openKeys = carried?.live ?? (await read($, live))
+    const backKeys = carried?.resumable ?? (await read($, resumable))
     const width = Math.min(cols, Math.max(CARD_WIDTH, Math.floor((cols - (perRow - 1)) / perRow)))
     const age = ageOf(new Date(loadedMs).toISOString(), now)
     const agoText = age === 'now' ? 'Just now' : `${age} ago`
