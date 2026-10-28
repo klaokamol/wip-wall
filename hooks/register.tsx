@@ -502,13 +502,16 @@ const start = async ($: Dollar, paneShown = false) => {
   if (!shown && (await otherPane($).catch(() => false))) return
   void claimPane($).catch(() => undefined)
   const kept = carried
-  if (kept) {
-    await update($, group, () => kept.group)
-    await update($, tab, () => kept.tab)
-    await update($, datePick, () => kept.date)
-    await update($, statusPick, () => kept.status)
+  try {
+    if (kept) {
+      await update($, group, () => kept.group)
+      await update($, tab, () => kept.tab)
+      await update($, datePick, () => kept.date)
+      await update($, statusPick, () => kept.status)
+    }
+  } finally {
+    carried = undefined
   }
-  carried = undefined
   const before = `${await read($, group)}/${await read($, tab)}`
   void $.ui.open({ id: PANE, title: await paneTitle($) })
   void Promise.all([syncHidden($), loadCache($, !kept).catch(() => false)])
@@ -569,7 +572,7 @@ export const register: Register = on => {
         polling = false
         await start($, true)
       })
-      carried = filters
+      carried = carried ?? filters
       restart(CLEAR_RESTART_TRIES)
     }
 
