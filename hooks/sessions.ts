@@ -102,10 +102,15 @@ async function liveSessions($: Dollar): Promise<Live[]> {
 }
 
 async function runningSids($: Dollar): Promise<Set<string>> {
-  const [ran, live] = await Promise.all([$.process.run(['ps', '-axww', '-o', 'command=']), liveSessions($).catch(() => [])])
+  const [ran, live] = await Promise.all([$.process.run(['ps', '-axww', '-o', 'pid=,command=']), liveSessions($).catch(() => [])])
   if (ran.exitCode !== 0) throw new Error(`ps exit ${ran.exitCode}`)
+  const current = new Set(live.map(l => l.pid))
+  const argv = ran.stdout.split('\n').flatMap(line => {
+    const hit = /^\s*(\d+)\s+(.*)$/.exec(line)
+    return hit && !current.has(Number(hit[1])) ? (hit[2] ?? '').split(/\s+/) : []
+  })
 
-  return new Set([...ran.stdout.split(/\s+/).filter(Boolean), ...live.map(l => l.sid)])
+  return new Set([...argv.filter(Boolean), ...live.map(l => l.sid)])
 }
 
 const isFresh = (session: Session | undefined): boolean => Date.now() - (session?.at ?? 0) <= LAUNCH_GRACE_MS

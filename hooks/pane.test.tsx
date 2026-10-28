@@ -162,7 +162,7 @@ const boot = async ($: any, on: any, cwd = FIXTURE_ROOT, issues: readonly object
         : cmd === 'sh'
           ? `/opt/homebrew/bin/glab\n${e.init?.env?.WIP_WALL_SAVED_HOST || 'gitlab.example.com'}\n${e.init?.env?.WIP_WALL_SAVED_ROOT || (noRoot ? '' : '/Users/dev/Developer/Project-Work')}\n/Users/dev/.claude/projects\n`
         : cmd === 'ps'
-        ? alive
+        ? alive.replace(/^(?!\d+ )(?=.)/gm, '999 ')
         : cmd === 'uuidgen'
         ? 'NEW-SID\n'
         : cmd === 'osascript'
@@ -1268,6 +1268,19 @@ test('a card whose new session left no transcript stays resumable through its pr
     await ui.unmount()
   } finally {
     hides = {}
+  }
+})
+
+test('a card is not open when its process now runs another session than the one in its argv', async ($, on) => {
+  alive = '5 claude --session-id s1\n'
+  liveFiles = `Mon Oct  5 09:15:08 2026\t${JSON.stringify({ pid: 5, sessionId: 'moved-on', procStart: 'Mon Oct 5 09:15:08 2026' })}`
+  try {
+    const ui = await boot($, on)
+    expect(await ui.find({ type: 'Text', text: /^── Working/ })).toBeUndefined()
+    await ui.unmount()
+  } finally {
+    alive = ''
+    liveFiles = ''
   }
 })
 
