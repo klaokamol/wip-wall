@@ -18,8 +18,13 @@ case "${1:-install}" in
     claude plugin marketplace remove "$market"
     echo "removed"
     ;;
+  update)
+    git -C "$here" pull --ff-only
+    sh "$here/wip-wall.sh" uninstall || true
+    sh "$here/wip-wall.sh" install
+    ;;
   *)
-    echo "usage: $0 [install|uninstall]" >&2
+    echo "usage: $0 [install|update|uninstall]" >&2
     exit 1
     ;;
 esac
