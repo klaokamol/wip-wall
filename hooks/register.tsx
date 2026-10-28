@@ -502,13 +502,13 @@ const start = async ($: Dollar, paneShown = false) => {
   if (!shown && (await otherPane($).catch(() => false))) return
   void claimPane($).catch(() => undefined)
   const kept = carried
-  carried = undefined
   if (kept) {
     await update($, group, () => kept.group)
     await update($, tab, () => kept.tab)
     await update($, datePick, () => kept.date)
     await update($, statusPick, () => kept.status)
   }
+  carried = undefined
   const before = `${await read($, group)}/${await read($, tab)}`
   void $.ui.open({ id: PANE, title: await paneTitle($) })
   void Promise.all([syncHidden($), loadCache($, !kept).catch(() => false)])
@@ -556,15 +556,20 @@ export const register: Register = on => {
     if (e.reason === 'clear' || e.reason === 'resume') {
       const filters = { group: await read($, group), tab: await read($, tab), date: await read($, datePick), status: await read($, statusPick) }
       const restart = (left: number) => $.clock.after(CLEAR_RESTART_MS, async () => {
-        if (!(await paneOpen($).catch(() => false))) return left > 0 ? void restart(left - 1) : undefined
+        if (!(await paneOpen($).catch(() => false))) {
+          if (left > 0) restart(left - 1)
+          else carried = undefined
+
+          return
+        }
         mocking = false
         refreshing = undefined
         for (const timer of timers) timer.cancel()
         timers = []
         polling = false
-        carried = filters
         await start($, true)
       })
+      carried = filters
       restart(CLEAR_RESTART_TRIES)
     }
 
@@ -663,10 +668,10 @@ export const register: Register = on => {
         reviews: saved?.reviews ?? (await read($, reviews)),
         mentions: saved?.mentions ?? (await read($, mentions)),
         hidden: await read($, hidden),
-        group: await read($, group),
-        tab: await read($, tab),
-        date: await read($, datePick),
-        status: await read($, statusPick),
+        group: carried?.group ?? (await read($, group)),
+        tab: carried?.tab ?? (await read($, tab)),
+        date: carried?.date ?? (await read($, datePick)),
+        status: carried?.status ?? (await read($, statusPick)),
         boards: saved?.boards ?? (await read($, boards)),
         working: [...(await read($, live)), hereKey],
         here: hereKey,
