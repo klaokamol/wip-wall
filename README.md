@@ -70,7 +70,7 @@ Do these in order.
 
 `/wip-wall mock` shows sample cards instead and fetches nothing, so you can look around once the mod is installed (after step 4).
 
-Later: `./install.sh uninstall` removes the mod. Update with `claude plugin update wip-wall@wip-wall-local`, then `/reload-plugins`. To try it for one session without installing: `claude --plugin-dir /path/to/wip-wall`.
+Later: `./install.sh uninstall` removes the mod. Update with `./install.sh update` from the clone (it runs `git pull --ff-only`, then removes and installs the mod again, so a new version is picked up even though `plugin.json` keeps one version number), then restart `claude` or run `/reload-plugins`. Your clone folder, theme and view settings are kept in the plugin store, not in the install, so they survive it. To try it for one session without installing: `claude --plugin-dir /path/to/wip-wall`.
 
 ## Using the pane
 
