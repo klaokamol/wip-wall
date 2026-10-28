@@ -435,7 +435,27 @@ const restoreOne = async ($: Dollar, key: string) => {
 }
 
 let polling = false
-let carried: { group: string; tab: string; date: string; status: string } | undefined
+let carried:
+  | {
+      group: string
+      tab: string
+      date: string
+      status: string
+      mentions: boolean
+      reviews: boolean
+      legend: boolean
+      compact: boolean
+      latest: boolean
+      folded: string[]
+      theme: string
+      place: string
+      dismissed: boolean
+      hidden: Record<string, string>
+      live: string[]
+      resumable: string[]
+      here: string
+    }
+  | undefined
 let timers: { cancel: () => void }[] = []
 
 // ponytail: fixed wait for the new session to settle after /clear or /resume; listen for a ready event if 500 ms proves too short
@@ -502,12 +522,28 @@ const start = async ($: Dollar, paneShown = false) => {
   if (!shown && (await otherPane($).catch(() => false))) return
   void claimPane($).catch(() => undefined)
   const kept = carried
-  carried = undefined
-  if (kept) {
-    await update($, group, () => kept.group)
-    await update($, tab, () => kept.tab)
-    await update($, datePick, () => kept.date)
-    await update($, statusPick, () => kept.status)
+  try {
+    if (kept) {
+      await update($, group, () => kept.group)
+      await update($, tab, () => kept.tab)
+      await update($, datePick, () => kept.date)
+      await update($, statusPick, () => kept.status)
+      await update($, mentionsOpen, () => kept.mentions)
+      await update($, reviewsOpen, () => kept.reviews)
+      await update($, legendOpen, () => kept.legend)
+      await update($, compact, () => kept.compact)
+      await update($, latest, () => kept.latest)
+      await update($, folded, () => kept.folded)
+      await update($, themeName, () => kept.theme)
+      await update($, openIn, () => kept.place)
+      await update($, dismissedOpen, () => kept.dismissed)
+      await update($, hidden, () => kept.hidden)
+      await update($, live, () => kept.live)
+      await update($, resumable, () => kept.resumable)
+      await update($, here, () => kept.here)
+    }
+  } finally {
+    carried = undefined
   }
   const before = `${await read($, group)}/${await read($, tab)}`
   void $.ui.open({ id: PANE, title: await paneTitle($) })
@@ -554,17 +590,40 @@ export const register: Register = on => {
       if (owner?.sid === (await $.session.id().catch(() => ''))) await $.store.delete('pane:owner').catch(() => undefined)
     }
     if (e.reason === 'clear' || e.reason === 'resume') {
-      const filters = { group: await read($, group), tab: await read($, tab), date: await read($, datePick), status: await read($, statusPick) }
+      const filters = {
+        group: await read($, group),
+        tab: await read($, tab),
+        date: await read($, datePick),
+        status: await read($, statusPick),
+        mentions: await read($, mentionsOpen),
+        reviews: await read($, reviewsOpen),
+        legend: await read($, legendOpen),
+        compact: await read($, compact),
+        latest: await read($, latest),
+        folded: await read($, folded),
+        theme: await read($, themeName),
+        place: await read($, openIn),
+        dismissed: await read($, dismissedOpen),
+        hidden: await read($, hidden),
+        live: await read($, live),
+        resumable: await read($, resumable),
+        here: await read($, here),
+      }
       const restart = (left: number) => $.clock.after(CLEAR_RESTART_MS, async () => {
-        if (!(await paneOpen($).catch(() => false))) return left > 0 ? void restart(left - 1) : undefined
+        if (!(await paneOpen($).catch(() => false))) {
+          if (left > 0) restart(left - 1)
+          else carried = undefined
+
+          return
+        }
         mocking = false
         refreshing = undefined
         for (const timer of timers) timer.cancel()
         timers = []
         polling = false
-        carried = filters
         await start($, true)
       })
+      carried = carried ?? filters
       restart(CLEAR_RESTART_TRIES)
     }
 
@@ -622,18 +681,18 @@ export const register: Register = on => {
     const els = $.ui.resolve(e)
     const { Box, Text, Button } = els
     const themeNames = Object.keys(THEMES)
-    const pickedTheme = await read($, themeName)
+    const pickedTheme = carried?.theme ?? (await read($, themeName))
     const themeKey = themeNames.includes(pickedTheme) ? pickedTheme : themeNames[0]
     const theme = THEMES[themeKey as keyof typeof THEMES]
     const { muted: MUTED, faint: FAINT, text: TEXT, bad: BAD } = theme
     const colorOf = (status: string): string => colorIn(theme, status)
-    const mentionsOn = await read($, mentionsOpen)
-    const reviewsOn = await read($, reviewsOpen)
-    const legendOn = await read($, legendOpen)
-    const compactOn = await read($, compact)
-    const latestOn = await read($, latest)
-    const dismissedOn = await read($, dismissedOpen)
-    const foldedNow = await read($, folded)
+    const mentionsOn = carried?.mentions ?? (await read($, mentionsOpen))
+    const reviewsOn = carried?.reviews ?? (await read($, reviewsOpen))
+    const legendOn = carried?.legend ?? (await read($, legendOpen))
+    const compactOn = carried?.compact ?? (await read($, compact))
+    const latestOn = carried?.latest ?? (await read($, latest))
+    const dismissedOn = carried?.dismissed ?? (await read($, dismissedOpen))
+    const foldedNow = carried?.folded ?? (await read($, folded))
     const problem = await read($, error)
     const atMs = await read($, loadedAt)
     const cardsNow = await read($, cards)
@@ -644,9 +703,9 @@ export const register: Register = on => {
     const menuOpen = await read($, groupMenu)
     const repoOpen = await read($, repoMenu)
     const scrolling = await read($, marquee)
-    const hereKey = await read($, here)
+    const hereKey = carried?.here ?? (await read($, here))
     const chosen = await read($, choosing)
-    const lastPlace = await read($, openIn)
+    const lastPlace = carried?.place ?? (await read($, openIn))
     const clones = saved?.dirs ?? (await read($, dirs))
     const cwdNow = await read($, sessionCwd)
     const cwdDir = Object.values(clones)
@@ -662,13 +721,13 @@ export const register: Register = on => {
         cards: saved?.cards ?? cardsNow,
         reviews: saved?.reviews ?? (await read($, reviews)),
         mentions: saved?.mentions ?? (await read($, mentions)),
-        hidden: await read($, hidden),
-        group: await read($, group),
-        tab: await read($, tab),
-        date: await read($, datePick),
-        status: await read($, statusPick),
+        hidden: carried?.hidden ?? (await read($, hidden)),
+        group: carried?.group ?? (await read($, group)),
+        tab: carried?.tab ?? (await read($, tab)),
+        date: carried?.date ?? (await read($, datePick)),
+        status: carried?.status ?? (await read($, statusPick)),
         boards: saved?.boards ?? (await read($, boards)),
-        working: [...(await read($, live)), hereKey],
+        working: [...(carried?.live ?? (await read($, live))), hereKey],
         here: hereKey,
         latest: latestOn,
       },
@@ -679,8 +738,8 @@ export const register: Register = on => {
     const perRow = Math.max(1, Math.floor(cols / (CARD_WIDTH + 1)))
     const lineWidth = e.props.bodyColumns ?? 80
     const branched = saved?.local ?? (await read($, local))
-    const openKeys = await read($, live)
-    const backKeys = await read($, resumable)
+    const openKeys = carried?.live ?? (await read($, live))
+    const backKeys = carried?.resumable ?? (await read($, resumable))
     const width = Math.min(cols, Math.max(CARD_WIDTH, Math.floor((cols - (perRow - 1)) / perRow)))
     const age = ageOf(new Date(loadedMs).toISOString(), now)
     const agoText = age === 'now' ? 'Just now' : `${age} ago`
