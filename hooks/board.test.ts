@@ -679,3 +679,19 @@ test('review requests become mr cards of their own, drop what is assigned, and s
   const busy = paneOf({ ...base, working: ['g/tablet/ipad!3'] }, now)
   expect([busy.reviews.map(c => c.num), busy.working.map(c => c.num)]).toEqual([[12], [3]])
 })
+
+test('the latte theme keeps every status and text colour readable on a white terminal', async () => {
+  const lum = (hex: string) => {
+    const [r = 0, g = 0, b = 0] = [1, 3, 5].map(i => {
+      const c = parseInt(hex.slice(i, i + 2), 16) / 255
+
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    })
+
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const ratio = (hex: string) => 1.05 / (lum(hex) + 0.05)
+  const { colors, muted, faint, text, good, warn, bad } = THEMES.latte
+  for (const hex of [...Object.values(colors), muted, text, good, warn, bad]) expect(ratio(hex)).toBeGreaterThanOrEqual(4.5)
+  expect(ratio(faint)).toBeGreaterThanOrEqual(3.5)
+})
