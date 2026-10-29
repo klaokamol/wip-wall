@@ -303,8 +303,10 @@ const openAt = async ($: Dollar, card: Card, place: Place) => {
     await update($, openIn, () => place)
     await $.store.set('ui:openIn', place)
     const cwd = dirOf(await read($, dirs), card)
-    if (!cwd || !isWebUrl(card.url)) return
-    if (await openCardSession($, card, cwd, place)) await syncLive($)
+    const note = (await read($, mentions)).find(m => m.ref === card.key)?.noteUrl
+    const target = note !== undefined && isWebUrl(note) ? { ...card, url: note } : card
+    if (!cwd || !isWebUrl(target.url)) return
+    if (await openCardSession($, target, cwd, place)) await syncLive($)
   } finally {
     opening.delete(card.key)
   }

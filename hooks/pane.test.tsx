@@ -1345,6 +1345,19 @@ test('the last choice is bold and the order never changes', async ($, on) => {
   }
 })
 
+test('opening an assigned card with a pending mention hands the session the comment link', async ($, on) => {
+  todos = [{ ...todo('mentioned', 'acme-team/web#3', 'sam.k', 'look'), target_url: 'https://x/u3#note_9' }]
+  try {
+    const ui = await boot($, on, '/Users/dev/Developer/Project-Work/PROJ-X/web/src')
+    await $.ui.press({ plugin: 'wip-wall', key: 'open:acme-team/web#3:0' })
+    await $.ui.press({ plugin: 'wip-wall', key: 'choose:acme-team/web#3:here' })
+    expect(filled).toEqual([{ text: 'https://x/u3#note_9', mode: 'append' }])
+    await ui.unmount()
+  } finally {
+    todos = []
+  }
+})
+
 test('inside the card\'s clone, here puts the card url in this prompt and opens no terminal', async ($, on) => {
   const ui = await boot($, on, '/Users/dev/Developer/Project-Work/PROJ-X/web/src')
   await $.ui.press({ plugin: 'wip-wall', key: 'open:acme-team/web#3:0' })
