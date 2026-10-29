@@ -5,7 +5,7 @@ import type { Card, Mention, Setup } from '../types'
 import { MOCK, MOCK_HERE, MOCK_LIVE, MOCK_LOCAL, MOCK_MENTIONS, MOCK_RESUMABLE, MOCK_REVIEWS } from './mock'
 import { ageOf, dirOf, dirsOf, isWebUrl, paneOf, reviewsOf, staleHides, titleOf, toCards } from './board'
 import type { Orders } from './board'
-import { boardOf, fetchBoard, gateOf, messageOf, saveHost, saveRoot, settingsOf, setupOf } from './gitlab'
+import { boardOf, fetchBoard, gateOf, messageOf, saveHost, saveRoot, saveTerminal, settingsOf, setupOf } from './gitlab'
 import { cardStatus, claimCard, focusRunning, isCardWindow, openCardSession, pruneCardSessions, releaseBranchCard } from './sessions'
 import type { Place } from './sessions'
 import { THEMES } from './themes'
@@ -653,6 +653,9 @@ export const register: Register = on => {
       const folder = typed.slice('setup'.length).trim()
       if (/^host(\s|$)/.test(folder)) {
         rejected = await saveHost($, folder.slice('host'.length))
+        saved = rejected === ''
+      } else if (/^terminal(\s|$)/.test(folder)) {
+        rejected = await saveTerminal($, folder.slice('terminal'.length))
         saved = rejected === ''
       } else if (folder !== '') {
         rejected = await saveRoot($, folder)

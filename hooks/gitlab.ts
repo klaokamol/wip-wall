@@ -3,6 +3,7 @@ import type { Hook } from 'claude-code'
 import type { Mention, Setup, SetupCheck } from '../types'
 import { MENTION_ACTIONS, boardOrder, clean, fromNdjson, mentionsOf, mrOfGraphql } from './board'
 import type { GqlMr, Raw, RawBoard, RawTodo } from './board'
+import { terminalOf } from './terminals'
 
 export type Dollar = Parameters<Hook<'session.start'>>[0]
 
@@ -10,20 +11,23 @@ const BOARD_TTL_MS = 24 * 60 * 60 * 1000
 
 const ROOT_KEY = 'ui:root'
 const HOST_KEY = 'ui:host'
+const TERMINAL_KEY = 'ui:terminal'
 const HOST_NAME = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$/
 const HAS_CONTROL = /[\u0000-\u001f\u007f]/
 const RESOLVE = 'case "$1" in "~") d=$HOME;; "~/"*) d=$HOME/${1#"~/"};; *) d=$1;; esac; [ -d "$d" ] && printf %s "$d"'
-const PROBE = 'if application "Ghostty" is running then\ntell application "Ghostty" to get name\nreturn "ok"\nend if\nreturn "idle"'
+const probeOf = (app: string) => `if application "${app}" is running then\ntell application "${app}" to get name\nreturn "ok"\nend if\nreturn "idle"`
 
 const DETECT = [
   'export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"',
   'glab="${WIP_WALL_GLAB:-$(command -v glab)}"',
-  `printf '%s\\n' "$glab" "\${WIP_WALL_HOST:-\${WIP_WALL_SAVED_HOST:-\${GITLAB_HOST:-$("$glab" config get host 2>/dev/null)}}}" "\${WIP_WALL_ROOT:-\${WIP_WALL_SAVED_ROOT:-}}" "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"`,
+  'term="${WIP_WALL_TERMINAL:-${WIP_WALL_SAVED_TERMINAL:-}}"',
+  '[ -z "$term" ] && { [ "${LC_TERMINAL:-}" = iTerm2 ] || [ "${TERM_PROGRAM:-}" = iTerm.app ]; } && term=iterm2',
+  `printf '%s\\n' "$glab" "\${WIP_WALL_HOST:-\${WIP_WALL_SAVED_HOST:-\${GITLAB_HOST:-$("$glab" config get host 2>/dev/null)}}}" "\${WIP_WALL_ROOT:-\${WIP_WALL_SAVED_ROOT:-}}" "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" "$term"`,
 ].join('\n')
 
 export const messageOf = (cause: unknown): string => clean(String(cause instanceof Error ? cause.message : cause))
 
-type Settings = { glab: string; host: string; root: string; sessions: string }
+type Settings = { glab: string; host: string; root: string; sessions: string; terminal: string }
 
 let detected: Promise<Settings> | undefined
 
@@ -39,11 +43,17 @@ async function savedHost($: Dollar): Promise<string> {
   return typeof saved === 'string' && HOST_NAME.test(saved) ? saved : ''
 }
 
-async function detect($: Dollar): Promise<Settings> {
-  const ran = await $.process.run(['sh', '-c', DETECT], { env: { WIP_WALL_SAVED_ROOT: await savedRoot($), WIP_WALL_SAVED_HOST: await savedHost($) } })
-  const [glab = '', host = '', root = '', sessions = ''] = ran.stdout.split('\n')
+async function savedTerminal($: Dollar): Promise<string> {
+  const saved = await $.store.get(TERMINAL_KEY)
 
-  return { glab, host, root, sessions }
+  return saved === 'ghostty' || saved === 'iterm2' ? saved : ''
+}
+
+async function detect($: Dollar): Promise<Settings> {
+  const ran = await $.process.run(['sh', '-c', DETECT], { env: { WIP_WALL_SAVED_ROOT: await savedRoot($), WIP_WALL_SAVED_HOST: await savedHost($), WIP_WALL_SAVED_TERMINAL: await savedTerminal($) } })
+  const [glab = '', host = '', root = '', sessions = '', terminal = ''] = ran.stdout.split('\n')
+
+  return { glab, host, root, sessions, terminal }
 }
 
 export function forgetSettings() {
@@ -87,6 +97,16 @@ export async function saveHost($: Dollar, typed: string): Promise<string> {
   return ''
 }
 
+export async function saveTerminal($: Dollar, typed: string): Promise<string> {
+  const name = typed.trim().toLowerCase()
+  if (name === 'auto') await $.store.delete(TERMINAL_KEY)
+  else if (name === 'ghostty' || name === 'iterm2') await $.store.set(TERMINAL_KEY, name)
+  else return 'give ghostty, iterm2 or auto'
+  forgetSettings()
+
+  return ''
+}
+
 async function requiredOf($: Dollar): Promise<{ glab: SetupCheck; login: SetupCheck; clone: SetupCheck }> {
   const raw = await detect($)
   const saved = await savedRoot($)
@@ -119,18 +139,19 @@ export async function gateOf($: Dollar): Promise<{ ready: boolean; setup: Setup 
 
 export async function setupOf($: Dollar): Promise<Setup> {
   const { glab, login, clone } = await requiredOf($)
-  const installed = (await $.process.run(['osascript', '-e', 'id of application "Ghostty"'])).exitCode === 0
-  const probe = installed ? await $.process.run(['osascript', '-e', PROBE]) : undefined
-  const ghostty: SetupCheck[] = [
-    { label: 'Ghostty', ok: installed, note: installed ? 'installed' : 'install it from ghostty.org' },
+  const term = terminalOf((await detect($)).terminal)
+  const installed = (await $.process.run(['osascript', '-e', `id of application "${term.app}"`])).exitCode === 0
+  const probe = installed ? await $.process.run(['osascript', '-e', probeOf(term.app)]) : undefined
+  const checks: SetupCheck[] = [
+    { label: term.name, ok: installed, note: installed ? 'installed' : `install it from ${term.site}` },
     {
-      label: 'Ghostty control',
+      label: `${term.name} control`,
       ok: probe !== undefined && probe.exitCode === 0,
-      note: probe === undefined ? 'needs Ghostty first' : probe.exitCode !== 0 ? 'allow it in System Settings, Privacy and Security, Automation' : probe.stdout.trim() === 'idle' ? 'Ghostty is not running: macOS asks on the first open' : 'allowed',
+      note: probe === undefined ? `needs ${term.name} first` : probe.exitCode !== 0 ? 'allow it in System Settings, Privacy and Security, Automation' : probe.stdout.trim() === 'idle' ? `${term.name} is not running: macOS asks on the first open` : 'allowed',
     },
   ]
 
-  return cleaned([glab, login, ...ghostty, clone])
+  return cleaned([glab, login, ...checks, clone])
 }
 
 async function run($: Dollar, argv: string[]): Promise<string> {
