@@ -130,7 +130,7 @@ const boot = async ($: any, on: any, cwd = FIXTURE_ROOT, issues: readonly object
     return { value: undefined }
   })
   on('store.get', (_: unknown, e: { key: string }) => ({
-    value: e.key === 'ui:root' || e.key === 'ui:host' || ((e.key.startsWith('card:') || e.key === 'pane:owner') && storedValues.some(v => v.key === e.key))
+    value: e.key === 'ui:root' || e.key === 'ui:host' || e.key === 'ui:terminal' || ((e.key.startsWith('card:') || e.key === 'pane:owner') && storedValues.some(v => v.key === e.key))
       ? storedValues.findLast(v => v.key === e.key)?.value
       : e.key in hides
       ? hides[e.key]
@@ -161,7 +161,7 @@ const boot = async ($: any, on: any, cwd = FIXTURE_ROOT, issues: readonly object
         : cmd === 'sh' && e.argv[3] === 'sh'
         ? e.argv.slice(4).map(path => `${path}\t${remotes[path] ?? ''}`).join('\n')
         : cmd === 'sh'
-          ? `/opt/homebrew/bin/glab\n${e.init?.env?.WIP_WALL_SAVED_HOST || 'gitlab.example.com'}\n${e.init?.env?.WIP_WALL_SAVED_ROOT || (noRoot ? '' : '/Users/dev/Developer/Project-Work')}\n/Users/dev/.claude/projects\n${terminalName}\n`
+          ? `/opt/homebrew/bin/glab\n${e.init?.env?.WIP_WALL_SAVED_HOST || 'gitlab.example.com'}\n${e.init?.env?.WIP_WALL_SAVED_ROOT || (noRoot ? '' : '/Users/dev/Developer/Project-Work')}\n/Users/dev/.claude/projects\n${e.init?.env?.WIP_WALL_SAVED_TERMINAL || terminalName}\n`
         : cmd === 'ps'
         ? alive.replace(/^(?!\d+ )(?=.)/gm, '999 ')
         : cmd === 'uuidgen'
@@ -1890,3 +1890,22 @@ test('/wip-wall setup host saves a bare host, strips a url, refuses a path, and 
   }
 })
 
+
+test('/wip-wall setup terminal saves ghostty or iterm2, refuses others, and a saved iterm2 opens cards through iTerm2', async ($, on) => {
+  const ui = await boot($, on, FIXTURE_ROOT, ISSUES, 'setup')
+  try {
+    await settle()
+    await $.command.run({ command: 'wip-wall', args: 'setup terminal ITerm2', ...TYPED_RUN })
+    await settle()
+    expect(storedValues.filter(e => e.key === 'ui:terminal').map(e => e.value)).toEqual(['iterm2'])
+
+    await $.command.run({ command: 'wip-wall', args: 'setup terminal kitty', ...TYPED_RUN })
+    expect(storedValues.filter(e => e.key === 'ui:terminal').map(e => e.value)).toEqual(['iterm2'])
+
+    await openCard($, 'acme-team/web#3', 'tab')
+    const scripts = ran.filter(a => a[0] === 'osascript').map(a => a[2] ?? '')
+    expect(scripts.some(text => text.includes('tell application "iTerm2"') && text.includes('create tab'))).toBe(true)
+  } finally {
+    await ui.unmount()
+  }
+})

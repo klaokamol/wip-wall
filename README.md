@@ -45,7 +45,7 @@ Every card is an issue coloured by its `Status::` label, with its merge request,
 Do these in order.
 
 1. **Check the requirements.**
-   - macOS with [Ghostty](https://ghostty.org) or [iTerm2](https://iterm2.com) (other terminals do not work). The terminal is picked from `WIP_WALL_TERMINAL` (`ghostty` or `iterm2`), else iTerm2 when `LC_TERMINAL` is `iTerm2` or `TERM_PROGRAM` is `iTerm.app`, else Ghostty. Inside tmux set `WIP_WALL_TERMINAL` if you use iTerm2.
+   - macOS with [Ghostty](https://ghostty.org) or [iTerm2](https://iterm2.com) (other terminals do not work). The terminal is picked from `WIP_WALL_TERMINAL` (`ghostty` or `iterm2`), else the one saved with `/wip-wall setup terminal ghostty|iterm2|auto`, else iTerm2 when `LC_TERMINAL` is `iTerm2` or `TERM_PROGRAM` is `iTerm.app`, else Ghostty. Inside tmux set `WIP_WALL_TERMINAL` if you use iTerm2.
    - Claude Code with mod support (tested on 2.1.311)
    - [`glab`](https://gitlab.com/gitlab-org/cli): `brew install glab`
    - your project clones under one folder (see Where your clones live)

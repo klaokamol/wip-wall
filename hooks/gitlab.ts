@@ -11,6 +11,7 @@ const BOARD_TTL_MS = 24 * 60 * 60 * 1000
 
 const ROOT_KEY = 'ui:root'
 const HOST_KEY = 'ui:host'
+const TERMINAL_KEY = 'ui:terminal'
 const HOST_NAME = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$/
 const HAS_CONTROL = /[\u0000-\u001f\u007f]/
 const RESOLVE = 'case "$1" in "~") d=$HOME;; "~/"*) d=$HOME/${1#"~/"};; *) d=$1;; esac; [ -d "$d" ] && printf %s "$d"'
@@ -19,7 +20,7 @@ const probeOf = (app: string) => `if application "${app}" is running then\ntell 
 const DETECT = [
   'export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"',
   'glab="${WIP_WALL_GLAB:-$(command -v glab)}"',
-  'term="${WIP_WALL_TERMINAL:-}"',
+  'term="${WIP_WALL_TERMINAL:-${WIP_WALL_SAVED_TERMINAL:-}}"',
   '[ -z "$term" ] && { [ "${LC_TERMINAL:-}" = iTerm2 ] || [ "${TERM_PROGRAM:-}" = iTerm.app ]; } && term=iterm2',
   `printf '%s\\n' "$glab" "\${WIP_WALL_HOST:-\${WIP_WALL_SAVED_HOST:-\${GITLAB_HOST:-$("$glab" config get host 2>/dev/null)}}}" "\${WIP_WALL_ROOT:-\${WIP_WALL_SAVED_ROOT:-}}" "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" "$term"`,
 ].join('\n')
@@ -42,8 +43,14 @@ async function savedHost($: Dollar): Promise<string> {
   return typeof saved === 'string' && HOST_NAME.test(saved) ? saved : ''
 }
 
+async function savedTerminal($: Dollar): Promise<string> {
+  const saved = await $.store.get(TERMINAL_KEY)
+
+  return saved === 'ghostty' || saved === 'iterm2' ? saved : ''
+}
+
 async function detect($: Dollar): Promise<Settings> {
-  const ran = await $.process.run(['sh', '-c', DETECT], { env: { WIP_WALL_SAVED_ROOT: await savedRoot($), WIP_WALL_SAVED_HOST: await savedHost($) } })
+  const ran = await $.process.run(['sh', '-c', DETECT], { env: { WIP_WALL_SAVED_ROOT: await savedRoot($), WIP_WALL_SAVED_HOST: await savedHost($), WIP_WALL_SAVED_TERMINAL: await savedTerminal($) } })
   const [glab = '', host = '', root = '', sessions = '', terminal = ''] = ran.stdout.split('\n')
 
   return { glab, host, root, sessions, terminal }
@@ -85,6 +92,16 @@ export async function saveHost($: Dollar, typed: string): Promise<string> {
   const host = typed.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '')
   if (!HOST_NAME.test(host)) return 'give a GitLab host such as gitlab.example.com (no path)'
   await $.store.set(HOST_KEY, host)
+  forgetSettings()
+
+  return ''
+}
+
+export async function saveTerminal($: Dollar, typed: string): Promise<string> {
+  const name = typed.trim().toLowerCase()
+  if (name === 'auto') await $.store.delete(TERMINAL_KEY)
+  else if (name === 'ghostty' || name === 'iterm2') await $.store.set(TERMINAL_KEY, name)
+  else return 'give ghostty, iterm2 or auto'
   forgetSettings()
 
   return ''

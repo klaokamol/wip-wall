@@ -422,6 +422,7 @@ export function setupView(look: Look, setup: Setup, clones: number, act: { close
         </Box>
       ))}
       <Text color={theme.faint}>{'GitLab host: /wip-wall setup host <host>'}</Text>
+      <Text color={theme.faint}>{'terminal: /wip-wall setup terminal ghostty|iterm2|auto'}</Text>
       <Text color={theme.faint}>{'clone folder: /wip-wall setup <folder>'}</Text>
     </Box>
   )
