@@ -105,9 +105,9 @@ export const toCards = (issues: Raw[], mrs: Raw[]): Card[] => {
 
   for (const mr of mrs) {
     const { project, num, repo, group } = split(mr.references.full)
-    const status = statusOf(mr.labels)
+    const status = statusOf(mr.labels) || 'review'
     const issueNum = Number(/^(\d+)-/.exec(mr.source_branch ?? '')?.[1])
-    const parent = cards.find(c => c.kind === 'issue' && c.project === project && c.num === issueNum)
+    const parent = cards.find(c => c.kind === 'issue' && c.project === project && c.num === issueNum && c.status !== '')
 
     if (parent) parent.mrs.push(mrRefOf(mr, num, status))
     else

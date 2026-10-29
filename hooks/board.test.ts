@@ -75,10 +75,10 @@ test('done stays out of the default view and shows alone when picked', async () 
   expect(viewOf(cards.filter(c => c.status !== 'Done'), 'done').active).toBe('all')
 })
 
-test('a card with no status label is not drawn', async () => {
+test('an issue with no status label is not drawn, but its assigned merge request is', async () => {
   const cards = toCards([raw('a/b#1', ['Bug']), raw('a/b#2', ['Status::Doing'])], [raw('a/b!5', [], { source_branch: '1-x' })])
 
-  expect(cards.map(c => c.num)).toEqual([2])
+  expect(cards.map(c => `${c.kind}${c.num}:${c.status}`)).toEqual(['issue2:Doing', 'mr5:review'])
 })
 
 test('a tab opened for a card is named after the card', async () => {
