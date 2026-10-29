@@ -551,6 +551,9 @@ test('pressing the header cycles the theme and recolours the pane', async ($, on
   expect(await doingColor()).toBe('#00f0ff')
 
   await $.ui.press({ plugin: 'wip-wall', key: 'theme' })
+  expect(await headerColor()).toBe('#4c4f69')
+
+  await $.ui.press({ plugin: 'wip-wall', key: 'theme' })
   expect(await headerColor()).toBe('#cdd6f4')
   await ui.unmount()
 })
