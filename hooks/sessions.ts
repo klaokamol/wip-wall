@@ -2,6 +2,7 @@ import type { Card } from '../types'
 import { clean, tabTitleOf } from './board'
 import { settingsOf } from './gitlab'
 import type { Dollar } from './gitlab'
+import { terminalOf } from './terminals'
 
 export type Place = 'window' | 'tab' | 'split' | 'here'
 
@@ -10,51 +11,6 @@ type Session = { sid: string; tab: string; in?: Place; at?: number; prev?: strin
 export type CardStatus = { open: string[]; resumable: string[]; mine: string }
 
 const LAUNCH_GRACE_MS = 60 * 1000
-
-const NEW_TERMINAL = `on run argv
-tell application "Ghostty"
-set cfg to new surface configuration from {initial working directory:(item 1 of argv), initial input:(item 2 of argv)}
-if (item 4 of argv) is "split" and (count of windows) > 0 then
-set t to selected tab of front window
-split (focused terminal of t) direction right with configuration cfg
-return id of t
-else if (item 4 of argv) is "tab" and (count of windows) > 0 then
-set t to new tab in front window with configuration cfg
-else
-set t to selected tab of (new window with configuration cfg)
-end if
-try
-perform action ("set_tab_title:" & (item 3 of argv)) on (focused terminal of t)
-end try
-return id of t
-end tell
-end run`
-
-const SELECT_TAB = `on run argv
-tell application "Ghostty"
-repeat with wid in (get id of windows)
-set w to first window whose id is (contents of wid)
-if (get id of tabs of w) contains (item 1 of argv) then
-select tab (first tab of w whose id is (item 1 of argv))
-activate window w
-return "ok"
-end if
-end repeat
-return "gone"
-end tell
-end run`
-
-const FOCUS_CWD = `on run argv
-tell application "Ghostty"
-set hits to every terminal whose working directory is (item 1 of argv)
-if (count of hits) is 1 then
-focus (item 1 of hits)
-return "ok"
-end if
-if (count of hits) is 0 then return "gone"
-return "many"
-end tell
-end run`
 
 async function savedSessions($: Dollar): Promise<Map<string, number>> {
   const { sessions } = await settingsOf($)
@@ -191,22 +147,26 @@ export async function focusRunning($: Dollar, card: Card): Promise<boolean> {
     return true
   }
   if (!running.has(known.sid)) return false
-  const picked = known.tab === '' ? undefined : await $.process.run(['osascript', '-e', SELECT_TAB, known.tab], { timeoutMs: 5000 }).catch(() => undefined)
+  const term = terminalOf((await settingsOf($)).terminal)
+  const picked = known.tab === '' ? undefined : await $.process.run(['osascript', '-e', term.select, known.tab], { timeoutMs: 5000 }).catch(() => undefined)
   if (known.tab !== '' && !picked) {
-    $.ui.toast('Ghostty did not answer: allow it in System Settings, Privacy and Security, Automation')
+    $.ui.toast(`${term.name} did not answer: allow it in System Settings, Privacy and Security, Automation`)
 
     return true
   }
   if (picked?.stdout.trim() === 'ok') return true
   const live = (await liveSessions($).catch(() => [])).find(l => l.sid === known.sid)
-  const byCwd = live && live.cwd !== '' ? await $.process.run(['osascript', '-e', FOCUS_CWD, live.cwd], { timeoutMs: 5000 }).catch(() => undefined) : undefined
-  if (byCwd?.stdout.trim() === 'ok') return true
-  const tty = live ? (await $.process.run(['ps', '-o', 'tty=', '-p', String(live.pid)]).catch(() => undefined))?.stdout.trim() : ''
+  const ttyOf = async () => (live ? (await $.process.run(['ps', '-o', 'tty=', '-p', String(live.pid)]).catch(() => undefined))?.stdout.trim() : '')
+  let tty = term.focusBy === 'tty' ? await ttyOf() : undefined
+  const target = term.focusBy === 'tty' ? (tty && tty !== '??' ? `/dev/${tty}` : '') : (live?.cwd ?? '')
+  const byFocus = target !== '' ? await $.process.run(['osascript', '-e', term.focus, target], { timeoutMs: 5000 }).catch(() => undefined) : undefined
+  if (byFocus?.stdout.trim() === 'ok') return true
+  tty ??= await ttyOf()
   const where = live ? ` (pid ${live.pid}${tty ? `, ${clean(tty)}` : ''})` : ''
   $.ui.toast(
-    byCwd?.stdout.trim() === 'many'
-      ? `This card's Claude runs${where} in a folder with several Ghostty terminals: switch to it there`
-      : `This card's Claude runs${where} in a terminal Ghostty does not list (a quick terminal, another app or a hidden window): switch to it there`,
+    byFocus?.stdout.trim() === 'many'
+      ? `This card's Claude runs${where} in a folder with several ${term.name} terminals: switch to it there`
+      : `This card's Claude runs${where} in a terminal ${term.name} does not list (a quick terminal, another app or a hidden window): switch to it there`,
   )
 
   return true
@@ -235,11 +195,12 @@ export async function openCardSession($: Dollar, card: Card, cwd: string, place:
   const sid = (!prev && known?.sid) || (await $.process.run(['uuidgen'])).stdout.trim().toLowerCase()
   const input = `claude --session-id ${sid}\n${prev ? `/resume ${prev}` : card.url}`
   await $.store.set(`card:${card.key}`, { sid, tab: known?.tab ?? '', in: place, at: Date.now(), prev } satisfies Session)
-  const made = await $.process.run(['osascript', '-e', NEW_TERMINAL, cwd, input, tabTitleOf(card), place])
+  const term = terminalOf((await settingsOf($)).terminal)
+  const made = await $.process.run(['osascript', '-e', term.open, cwd, input, tabTitleOf(card), place])
   if (made.exitCode !== 0) {
     if (known) await $.store.set(`card:${card.key}`, known)
     else await $.store.delete(`card:${card.key}`)
-    $.ui.toast(clean(made.stderr).trim() || 'Ghostty refused the new terminal')
+    $.ui.toast(clean(made.stderr).trim() || `${term.name} refused the new terminal`)
 
     return false
   }

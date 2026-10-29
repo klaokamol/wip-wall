@@ -6,7 +6,7 @@ Your assigned GitLab issues and merge requests, docked beside the transcript as 
 
 <p>
 <img alt="Claude Code mod" src="https://img.shields.io/badge/Claude_Code-mod-D97757?style=flat&logo=claude&logoColor=white">
-<img alt="macOS" src="https://img.shields.io/badge/macOS-Ghostty-6e7681?style=flat&logo=apple&logoColor=white">
+<img alt="macOS" src="https://img.shields.io/badge/macOS-Ghostty%20%7C%20iTerm2-6e7681?style=flat&logo=apple&logoColor=white">
 <img alt="GitLab" src="https://img.shields.io/badge/GitLab-glab-FC6D26?style=flat&logo=gitlab&logoColor=white">
 </p>
 
@@ -25,7 +25,7 @@ Your assigned GitLab issues and merge requests, docked beside the transcript as 
 
 </div>
 
-Every card is an issue coloured by its `Status::` label, with its merge request, pipeline and review state under the title. Press a card and Claude opens in your local clone of that project: in a new Ghostty window, a tab or a split, or right where you are. Press a card whose Claude is still running and it comes to the front; press one whose Claude has exited and the same session resumes.
+Every card is an issue coloured by its `Status::` label, with its merge request, pipeline and review state under the title. Press a card and Claude opens in your local clone of that project: in a new terminal window, a tab or a split, or right where you are. Press a card whose Claude is still running and it comes to the front; press one whose Claude has exited and the same session resumes.
 
 ## Highlights
 
@@ -45,7 +45,7 @@ Every card is an issue coloured by its `Status::` label, with its merge request,
 Do these in order.
 
 1. **Check the requirements.**
-   - macOS with [Ghostty](https://ghostty.org) (other terminals do not work: cards open through Ghostty)
+   - macOS with [Ghostty](https://ghostty.org) or [iTerm2](https://iterm2.com) (other terminals do not work). The terminal is picked from `WIP_WALL_TERMINAL` (`ghostty` or `iterm2`), else iTerm2 when `LC_TERMINAL` is `iTerm2` or `TERM_PROGRAM` is `iTerm.app`, else Ghostty. Inside tmux set `WIP_WALL_TERMINAL` if you use iTerm2.
    - Claude Code with mod support (tested on 2.1.311)
    - [`glab`](https://gitlab.com/gitlab-org/cli): `brew install glab`
    - your project clones under one folder (see Where your clones live)
@@ -62,8 +62,8 @@ Do these in order.
    claude plugin install wip-wall@wip-wall-local
    ```
 4. **Restart `claude`** (or run `/reload-plugins`). The pane does not open by itself until a clone folder is set (step 7); run `/wip-wall` to open it. After that it opens only in sessions started inside that folder, and `/wip-wall` opens it anywhere. Until `glab`, GitLab login and the clone folder all pass, the pane shows only the setup checklist: no filters, no cards, and nothing is fetched from GitLab or scanned on disk. These three are checked again on every `/wip-wall`.
-5. **Run `/wip-wall setup`.** The pane shows a checklist: `glab` found, GitLab login, Ghostty installed, Ghostty control allowed, and your clone folder with how many clones it matched. Each line that fails says what to run. If `GitLab login` says `no host`, run `/wip-wall setup host <host>` (a bare host such as `gitlab.example.com`), which saves it and checks again.
-6. **Allow Ghostty control.** If Ghostty is running during step 5, macOS may ask whether your terminal may control it: allow it. If Ghostty is not running, macOS asks on the first card you open.
+5. **Run `/wip-wall setup`.** The pane shows a checklist: `glab` found, GitLab login, your terminal installed, terminal control allowed, and your clone folder with how many clones it matched. Each line that fails says what to run. If `GitLab login` says `no host`, run `/wip-wall setup host <host>` (a bare host such as `gitlab.example.com`), which saves it and checks again.
+6. **Allow terminal control.** If your terminal is running during step 5, macOS may ask whether your terminal may control it: allow it. If it is not running, macOS asks on the first card you open.
 7. **Set the clone folder.** Run `/wip-wall setup ~/path/to/clones` (the folder that holds your work clones; the choice is remembered). `Clone folder` turns ✓ and shows how many clones matched. Pick the narrowest folder that holds them: a wider one scans more and opens the pane in sessions that have nothing to do with GitLab.
 8. **Press `[done]`, then run `/wip-wall`.** `[done]` appears once the three checks pass. Your real issues, merge requests and mentions load (running `/wip-wall setup <folder>` that fixes the last failing check loads them straight away). Ghostty rows only warn: they never block the pane.
 9. **Press a card** to open Claude in its clone (see Opening a card).
@@ -84,7 +84,7 @@ open: [window] [tab] [split] [here] [×]
 
 | Place | What happens |
 | --- | --- |
-| `window` | A new Ghostty window in the card's clone. |
+| `window` | A new terminal window in the card's clone. |
 | `tab` | A new tab in the front window. |
 | `split` | A split to the right of the focused terminal, in the front window's selected tab. |
 | `here` | Only when this session is already in that clone: the card's link goes into your prompt (or `/resume <id>` when the card has a saved session). |
@@ -157,7 +157,7 @@ WIP-WALL is a mod: it runs inside your Claude Code session with your own rights 
 
 - `find` under the clone root (depth 4) for `.git` folders, and `git` to read each clone's `origin` url and local branch names. No file contents are read. After every prompt you submit it runs one `git branch` in the session's folder, to follow a branch switch.
 - `find` and `stat` under `~/.claude/projects` for the names and times of saved session transcripts, `ps` to see which Claude session ids are running, and Claude Code's own `sessions/<pid>.json` files to match a running `claude` to its session id, so a card knows whether its session is open or resumable.
-- `osascript` to open or focus Ghostty windows and tabs, and `open` to show a link in your browser (http and https only). The first use triggers a macOS Automation prompt. `/wip-wall setup` also asks Ghostty its name, only when Ghostty is already running, to check that control is allowed; it never starts Ghostty. It also runs `glab auth status` to check your login.
+- `osascript` to open or focus Ghostty or iTerm2 windows and tabs, and `open` to show a link in your browser (http and https only). The first use triggers a macOS Automation prompt. `/wip-wall setup` also asks your terminal its name, only when it is already running, to check that control is allowed; it never starts it. It also runs `glab auth status` to check your login.
 
 **Claude sessions it starts.** Pressing a card runs `claude --session-id <id>` in the card's clone, with the card's url typed into the prompt (or `/resume <old id>` when the card already had a session). You press Enter yourself; nothing is submitted for you. The new session has your normal Claude Code permissions. For a mention, the typed url comes from whoever mentioned you, so treat it as you would any link a colleague sends before pressing Enter.
 
@@ -177,7 +177,7 @@ WIP-WALL is a mod: it runs inside your Claude Code session with your own rights 
 | `clone root or sessions folder unknown` | none of the default folders exist: run `/wip-wall setup ~/path/to/clones`, or set `WIP_WALL_ROOT` |
 | `No local clone of <project> under <root>` | clone the project under that root; if you moved or renamed it on GitLab, run `git remote set-url origin <new url>` in the clone |
 | Pane is blank | run `/wip-wall`; if it stays blank, run `claude --debug` and look for a `wip-wall:` line |
-| A card will not open | check `glab auth status` and that Ghostty may be controlled (System Settings, Privacy and Security, Automation) |
+| A card will not open | check `glab auth status` and that your terminal may be controlled (System Settings, Privacy and Security, Automation) |
 | Board looks old | the age button in the header shows when it was fetched; press it to refresh |
 
 </details>

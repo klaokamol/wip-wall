@@ -37,6 +37,7 @@ let branchName = ''
 let liveFiles = ''
 let selected = 'gone\n'
 let focused = 'gone\n'
+let terminalName = ''
 let panes: { id: string }[] = []
 const openCard = async ($: any, key: string, place = 'window') => {
   await $.ui.press({ plugin: 'wip-wall', key: `open:${key}:0` })
@@ -160,7 +161,7 @@ const boot = async ($: any, on: any, cwd = FIXTURE_ROOT, issues: readonly object
         : cmd === 'sh' && e.argv[3] === 'sh'
         ? e.argv.slice(4).map(path => `${path}\t${remotes[path] ?? ''}`).join('\n')
         : cmd === 'sh'
-          ? `/opt/homebrew/bin/glab\n${e.init?.env?.WIP_WALL_SAVED_HOST || 'gitlab.example.com'}\n${e.init?.env?.WIP_WALL_SAVED_ROOT || (noRoot ? '' : '/Users/dev/Developer/Project-Work')}\n/Users/dev/.claude/projects\n`
+          ? `/opt/homebrew/bin/glab\n${e.init?.env?.WIP_WALL_SAVED_HOST || 'gitlab.example.com'}\n${e.init?.env?.WIP_WALL_SAVED_ROOT || (noRoot ? '' : '/Users/dev/Developer/Project-Work')}\n/Users/dev/.claude/projects\n${terminalName}\n`
         : cmd === 'ps'
         ? alive.replace(/^(?!\d+ )(?=.)/gm, '999 ')
         : cmd === 'uuidgen'
@@ -929,6 +930,22 @@ test('two presses on one title open one window', async ($, on) => {
   await Promise.all([$.ui.press({ plugin: 'wip-wall', key: 'choose:acme-team/web#3:window' }), $.ui.press({ plugin: 'wip-wall', key: 'choose:acme-team/web#3:window' })])
   expect(newTabs()).toHaveLength(1)
   await ui.unmount()
+})
+
+test('with WIP_WALL_TERMINAL iterm2 a card opens through iTerm2 and its session id is stored', async ($, on) => {
+  terminalName = 'iterm2'
+  try {
+    const ui = await boot($, on)
+
+    await openCard($, 'acme-team/web#3', 'tab')
+    const scripts = ran.filter(a => a[0] === 'osascript').map(a => a[2] ?? '')
+    expect(scripts.some(text => text.includes('tell application "iTerm2"') && text.includes('create tab'))).toBe(true)
+    expect(scripts.some(text => text.includes('Ghostty') && text.includes('surface configuration'))).toBe(false)
+    expect(storedValues.findLast(e => e.key === 'card:acme-team/web#3')?.value).toMatchObject({ in: 'tab', tab: 'tab-1' })
+    await ui.unmount()
+  } finally {
+    terminalName = ''
+  }
 })
 
 test('two clones with one repo name open the one whose remote is the card project', async ($, on) => {
