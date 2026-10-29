@@ -67,11 +67,11 @@ end run`,
     open: `on run argv
 tell application "iTerm2"
 if (item 4 of argv) is "split" and (count of windows) > 0 then
-tell current session of current window
+tell current session of window 1
 set s to (split vertically with default profile)
 end tell
 else if (item 4 of argv) is "tab" and (count of windows) > 0 then
-tell current window
+tell window 1
 set t to (create tab with default profile)
 end tell
 set s to current session of t
