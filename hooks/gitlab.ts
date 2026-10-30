@@ -147,7 +147,7 @@ async function listOf<T = Raw>($: Dollar, path: string): Promise<T[]> {
 
 const REVIEW_STATES = 'reviewStates: [UNREVIEWED, REVIEW_STARTED, UNAPPROVED], '
 
-const mrsQuery = (field: string, filter = '') => `query($after: String) { currentUser { id ${field}(state: opened, ${filter}first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { reference(full: true) author { username } title webUrl updatedAt sourceBranch draft conflicts approved detailedMergeStatus mergeableDiscussionsState labels { nodes { title } } headPipeline { status } reviewers { nodes { id } } notes(last: 10) { nodes { system author { id } } } } } } }`
+const mrsQuery = (field: string, filter = '') => `query($after: String) { currentUser { id ${field}(state: opened, ${filter}first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { reference(full: true) author { username } title description webUrl updatedAt sourceBranch draft conflicts approved detailedMergeStatus mergeableDiscussionsState labels { nodes { title } } headPipeline { status } reviewers { nodes { id } } notes(last: 10) { nodes { system author { id } } } } } } }`
 
 type MrConnection = { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: GqlMr[] }
 
