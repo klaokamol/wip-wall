@@ -75,10 +75,23 @@ test('done stays out of the default view and shows alone when picked', async () 
   expect(viewOf(cards.filter(c => c.status !== 'Done'), 'done').active).toBe('all')
 })
 
-test('a card with no status label is not drawn', async () => {
+test('an issue with no status label is not drawn, but its assigned merge request is', async () => {
   const cards = toCards([raw('a/b#1', ['Bug']), raw('a/b#2', ['Status::Doing'])], [raw('a/b!5', [], { source_branch: '1-x' })])
 
-  expect(cards.map(c => c.num)).toEqual([2])
+  expect(cards.map(c => `${c.kind}${c.num}:${c.status}`)).toEqual(['issue2:Doing', 'mr5:review'])
+})
+
+test('an open MR whose issue is not on the board is drawn as review, whatever its label', async () => {
+  const cards = toCards([], [raw('a/b!5', ['Status: Done'], { source_branch: '9-x' }), raw('a/b!6', [], { source_branch: '8-y' })])
+
+  expect(cards.map(c => [c.num, c.status])).toEqual([[5, 'review'], [6, 'review']])
+})
+
+test('an MR joins the issue its description relates to when its branch names none on the board', async () => {
+  const issues = [raw('a/b#13', ['Status::Doing'])]
+  const cards = toCards(issues, [raw('a/b!35', [], { source_branch: '19-x', description: 'related: [#13](https://x/issues/13#note_1)' }), raw('a/b!36', [], { source_branch: 'feat-y', description: 'Closes #13' }), raw('a/b!37', [], { source_branch: '99-z', description: 'Related to #77' })])
+
+  expect(cards.map(c => [c.num, c.kind, c.mrs.map(m => m.num)])).toEqual([[13, 'issue', [35, 36]], [37, 'mr', [37]]])
 })
 
 test('a tab opened for a card is named after the card', async () => {

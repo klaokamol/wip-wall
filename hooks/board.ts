@@ -7,6 +7,7 @@ export type Raw = {
   labels: string[]
   updated_at: string
   source_branch?: string
+  description?: string
   due_date?: string | null
   draft?: boolean
   has_conflicts?: boolean
@@ -58,6 +59,13 @@ const split = (full: string) => {
   return { project, num: Number(num), repo: parts.at(-1) ?? '', group: parts.at(-2) ?? parts[0] ?? '' }
 }
 
+const RELATED_RE = /\b(?:related(?:\s+to)?|relates\s+to|closes?|fixes?|resolves?)\s*:?\s*\[?#(\d+)/gi
+
+const issueNumsOf = (mr: Raw): number[] => [
+  Number(/^(\d+)-/.exec(mr.source_branch ?? '')?.[1]),
+  ...[...(mr.description ?? '').matchAll(RELATED_RE)].map(hit => Number(hit[1])),
+]
+
 const mrRefOf = (mr: Raw, num: number, status: string): MrRef => ({
   num,
   status,
@@ -105,9 +113,10 @@ export const toCards = (issues: Raw[], mrs: Raw[]): Card[] => {
 
   for (const mr of mrs) {
     const { project, num, repo, group } = split(mr.references.full)
-    const status = statusOf(mr.labels)
-    const issueNum = Number(/^(\d+)-/.exec(mr.source_branch ?? '')?.[1])
-    const parent = cards.find(c => c.kind === 'issue' && c.project === project && c.num === issueNum)
+    const status = statusOf(mr.labels) || 'review'
+    const shown = isDone(status) ? 'review' : status
+    const nums = issueNumsOf(mr)
+    const parent = cards.find(c => c.kind === 'issue' && c.project === project && nums.includes(c.num) && c.status !== '')
 
     if (parent) parent.mrs.push(mrRefOf(mr, num, status))
     else
@@ -120,10 +129,10 @@ export const toCards = (issues: Raw[], mrs: Raw[]): Card[] => {
         num,
         title: clean(mr.title),
         url: mr.web_url,
-        status,
+        status: shown,
         updated: mr.updated_at,
         due: '',
-        mrs: [],
+        mrs: [mrRefOf(mr, num, shown)],
       })
   }
 
@@ -637,6 +646,7 @@ export type GqlMr = {
   webUrl: string
   updatedAt: string
   sourceBranch: string | null
+  description?: string | null
   draft: boolean
   conflicts: boolean
   approved: boolean
@@ -658,6 +668,7 @@ export const mrOfGraphql = (n: GqlMr, me: string): Raw => {
     labels: n.labels.nodes.map(l => l.title),
     updated_at: n.updatedAt,
     source_branch: n.sourceBranch ?? undefined,
+    description: n.description ?? undefined,
     draft: n.draft,
     has_conflicts: n.conflicts,
     blocking_discussions_resolved: n.mergeableDiscussionsState ?? undefined,
