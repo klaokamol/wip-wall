@@ -558,6 +558,7 @@ const isTextEmoji = (ch: string): boolean => EMOJI.test(ch) && !FLAG.test(ch)
 
 // ponytail: a ZWJ family counts every emoji (drawn as 2, counted 4) and VS16 only widens a one-cell symbol; swap in a grapheme-aware wcwidth table if card borders drift
 const cellsOf = (cp: number, prev?: number): number => {
+  if (cp < 0x300) return 1
   if (cp === 0xfe0f) return prev !== undefined && prev > 0x7f && isTextEmoji(String.fromCodePoint(prev)) && cellsOf(prev) === 1 ? 1 : 0
   if (within(MARKS, cp)) return 0
   const ch = String.fromCodePoint(cp)

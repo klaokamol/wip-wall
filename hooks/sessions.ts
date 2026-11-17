@@ -91,20 +91,25 @@ export async function cardStatus($: Dollar, canWrite: () => boolean): Promise<Ca
 
 export async function claimCard($: Dollar, card: Card): Promise<void> {
   const sid = await $.session.id()
-  const running = await runningSids($).catch(() => new Set<string>())
-  const saved = await savedSessions($).catch(() => new Map<string, number>())
-  let kept: string | undefined
+  let target: Session | undefined
   const stale: string[] = []
   for (const key of (await $.store.keys()).filter(k => k.startsWith('card:'))) {
     const session = (await $.store.get(key)) as Session | undefined
     if (!session) continue
     if (key === `card:${card.key}`) {
-      if (session.sid === sid || session.prev === sid || running.has(session.sid) || (isFresh(session) && !resumeOf(session, saved))) return
-      kept = resumeOf(session, saved)
+      if (session.sid === sid || session.prev === sid) return
+      target = session
     } else if (session.in === 'here' && session.sid === sid) {
       if (session.by !== 'branch') return
       stale.push(key)
     }
+  }
+  let kept: string | undefined
+  if (target) {
+    const running = await runningSids($).catch(() => new Set<string>())
+    const saved = await savedSessions($).catch(() => new Map<string, number>())
+    if (running.has(target.sid) || (isFresh(target) && !resumeOf(target, saved))) return
+    kept = resumeOf(target, saved)
   }
   for (const key of stale) await $.store.delete(key)
   await $.store.set(`card:${card.key}`, { sid, tab: '', in: 'here', at: Date.now(), prev: kept, by: 'branch' } satisfies Session)
